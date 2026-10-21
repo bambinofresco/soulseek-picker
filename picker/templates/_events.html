@@ -1,0 +1,5 @@
+{% if events %}
+<ul class="events">
+  {% for e in events %}<li><time>{{ e.ts|local("%m-%d %H:%M:%S") }}</time> {{ e.message }}</li>{% endfor %}
+</ul>
+{% else %}<p class="muted">No events yet.</p>{% endif %}

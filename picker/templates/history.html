@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}History · Soulseek picker{% endblock %}
+{% block content %}
+<h1>History</h1>
+{% if rows %}
+<div class="table-wrap">
+<table class="grid">
+  <thead><tr><th>Date</th><th>Album</th><th>Edition</th><th>From</th><th>Folder</th><th>Outcome</th><th>beets</th></tr></thead>
+  <tbody>
+  {% for i in rows %}
+  {% set a = albums.get(i.rg_mbid) %}
+  <tr>
+    <td class="nowrap muted">{{ i.created_at|local }}</td>
+    <td><a href="/imports/{{ i.id }}">{% if a %}{{ a.artist }} – {{ a.title }}{% else %}{{ i.rg_mbid }}{% endif %}</a></td>
+    <td>{% if i.release_mbid %}<a class="mono small" href="https://musicbrainz.org/release/{{ i.release_mbid }}" target="_blank" rel="noopener">{{ i.release_mbid[:8] }}</a>{% endif %}</td>
+    <td>{{ i.username or ("Lidarr" if i.source == "lidarr" else "") }}</td>
+    <td class="mono small">{{ i.album_dir or i.source_dir or "" }}</td>
+    <td><span class="state state-{{ i.state }}">{{ i.state }}</span>{% if i.notes %} <span class="badge warn" title="{{ i.notes|join('\n') }}">{{ i.notes|length }} note{{ "s" if i.notes|length > 1 }}</span>{% endif %}</td>
+    <td>{% if i.beets_output %}<details><summary class="small">output</summary><pre class="output">{{ i.beets_output }}</pre></details>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">Nothing imported yet.</p>
+{% endif %}
+{% endblock %}

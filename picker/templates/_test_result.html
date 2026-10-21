@@ -1,0 +1,2 @@
+<span class="{{ 'ok-text' if result.ok else 'error-text' }}">{{ "✓" if result.ok else "✗" }} {{ result.message }}</span>
+{% if slskd_dir_warning %}<span class="warn-text"> · {{ slskd_dir_warning }}</span>{% endif %}

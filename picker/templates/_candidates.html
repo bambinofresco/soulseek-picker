@@ -1,0 +1,224 @@
+{#- Evidence lines for a badge's hover text; `meaning` narrows to one flag or territory. -#}
+{% macro ev(p, key, meaning=None) -%}
+{%- for e in (p.evidence or {}).get(key, []) if meaning is none or e.meaning == meaning or e.meaning.endswith(": " ~ meaning) -%}
+“{{ e.token }}” → {{ e.meaning }}{% if e.segment %} · in “{{ e.segment }}”{% endif %}{{ "\n" }}
+{%- endfor -%}
+{%- endmacro %}
+
+{% macro th(key, label, cls="") -%}
+<th class="{{ cls }}"><a class="sort {% if params.sort == key %}active{% endif %}" href="#"
+  hx-get="/album/{{ rg_mbid }}/candidates?{{ qs(sort=key, rev=(params.sort == key and not params.rev)) }}"
+  hx-target="#candidates" hx-swap="outerHTML">{{ label }}{% if params.sort == key %} {{ "▲" if params.rev else "▼" }}{% endif %}</a></th>
+{%- endmacro %}
+
+<section id="candidates" hx-get="/album/{{ rg_mbid }}/candidates?{{ qs() }}" hx-swap="outerHTML"
+  hx-trigger="candidates-changed from:body{% if active %}, every 2s{% endif %}">
+  <div class="toolbar">
+    <h2>Soulseek folders</h2>
+    {% if not searching_now %}
+    <button hx-post="/album/{{ rg_mbid }}/search" hx-target="#candidates" hx-swap="outerHTML">
+      {% if search %}Search again{% else %}Search Soulseek{% endif %}
+    </button>
+    {% endif %}
+    {% if search and search.state == "done" %}
+    <form class="filters" hx-get="/album/{{ rg_mbid }}/candidates" hx-target="#candidates" hx-swap="outerHTML" hx-trigger="change">
+      {% if params.all %}<input type="hidden" name="all" value="true">{% endif %}
+      {% if params.sort %}<input type="hidden" name="sort" value="{{ params.sort }}">{% endif %}
+      {% if params.rev %}<input type="hidden" name="rev" value="true">{% endif %}
+      <select name="source" aria-label="Source">
+        <option value="">Any source</option>
+        {% for s in sources %}<option value="{{ s }}" {% if params.source == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+      <select name="depth" aria-label="Bit depth">
+        <option value="">Any bit depth</option>
+        {% for d in depths %}<option value="{{ d }}" {% if params.depth == d|string %}selected{% endif %}>{{ d }}-bit</option>{% endfor %}
+      </select>
+    </form>
+    <a class="toggle" href="#" hx-get="/album/{{ rg_mbid }}/candidates?{{ qs(all=not params.all) }}" hx-target="#candidates" hx-swap="outerHTML">
+      {% if params.all %}Default filter{% else %}Show all{% if hidden %} ({{ hidden }} hidden){% endif %}{% endif %}
+    </a>
+    {% endif %}
+  </div>
+
+  {% if target_id %}
+    <p class="banner pin">Showing only folders that could be the pinned edition: <strong>{{ target|edition }}</strong>.
+      Unpin it in the Editions panel to see everything.</p>
+  {% endif %}
+
+  {% if not search %}
+    <p class="muted">Not searched yet.</p>
+  {% elif searching_now %}
+    <p class="progress-line"><span class="spinner"></span>
+      {% if search.current_query %}Searching “{{ search.current_query }}”{% else %}Starting search{% endif %}:
+      {{ search.response_count }} users, {{ search.file_count }} files so far
+      {% if search.queries|length > 1 and search.current_query in search.queries %}<span class="muted">(query {{ search.queries.index(search.current_query) + 1 }} of {{ search.queries|length }})</span>{% endif %}
+    </p>
+  {% elif search.state == "failed" %}
+    <p class="banner error">Search failed: {{ search.error }}</p>
+  {% elif not candidates %}
+    <p class="muted">No folders{% if hidden %} pass the default filter ({{ hidden }} hidden){% endif %}{% if params.source or params.depth %} match these filters{% endif %}. Queries tried: {{ search.queries|join(", ") }}</p>
+  {% else %}
+  <p class="muted small">{{ candidates|length }} folders · queries: {{ search.queries|join(" · ") }} · hover a badge to see where it came from</p>
+  <div class="table-wrap">
+  <table class="grid candidates">
+    <thead>
+      <tr>
+        {{ th("match", "Match") }}<th>Folder</th>
+        {{ th("source", "Source") }}{{ th("format", "Format") }}{{ th("tracks", "Tracks") }}{{ th("years", "Years") }}
+        {{ th("catalog", "Catalog no.") }}{{ th("flags", "Flags") }}{{ th("sidecars", "Sidecars") }}
+        {{ th("availability", "Availability") }}{{ th("size", "Size", "num") }}<th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in candidates %}
+      {% set p = parsed(c) %}
+      {% set q = quality(c) %}
+      {% set m = match_of(c) %}
+      {% set matched = m.editions or [] %}
+      {% set li = c.log_info or {} %}
+      {% set logs = li.logs or [] %}
+      {% set log_verdict = "bad" if logs|selectattr("verdict", "equalto", "bad")|list else ("good" if logs and logs|selectattr("verdict", "equalto", "good")|list|length == logs|length else "unknown") %}
+      {% set rq = rip_quality(c.sidecars, p, li) %}
+      {% set comp = completeness(m or {"tracks_agree": false}, c.sidecars) %}
+      <tr class="cand" onclick="if (!event.target.closest('button,a,select,details,form')) this.nextElementSibling.toggleAttribute('hidden')">
+        <td class="match">
+          <span class="tier tier-{{ (m.tier or 'Unknown')|lower }}" title="{% for s in m.signals or [] %}{{ '%+g'|format(s.weight) }} {{ s.detail }}{{ '\n' }}{% endfor %}">{{ m.tier or "Unknown" }}</span>
+          {% if matched|length == 1 %}
+            <span class="edition-name small">{{ editions.get(matched[0])|edition }}</span>
+          {% elif matched %}
+            <details class="one-of"><summary class="small">one of {{ matched|length }}</summary>
+              <ul>{% for rid in matched %}<li class="small">{{ editions.get(rid)|edition }}</li>{% endfor %}</ul>
+            </details>
+          {% endif %}
+        </td>
+        <td class="folder">
+          <span class="user">{{ c.username }}</span>
+          <span class="path" title="{{ c.folder }}">{{ c.folder.split("\\")[-2:]|join(" \\ ") }}</span>
+        </td>
+        <td>
+          {% if p.source %}<span class="badge src src-{{ p.source|lower|replace('-', '') }}" title="{{ ev(p, 'source') }}">{{ p.source }}{% if p.store %} · {{ p.store }}{% endif %}</span>{% endif %}
+        </td>
+        <td class="nowrap">
+          <span class="badge">{{ c.audio_format }}</span>
+          {% if q[0] or q[1] %}
+          <span {% if p.quality_from == "path" %}class="from-path"{% endif %} title="{{ ev(p, 'quality') }}">{{ q[0] or "?" }}/{{ q[1]|khz }}</span>
+          {% endif %}
+          {% if c.mixed_quality %}<span class="badge warn" title="{{ ev(p, 'quality') }}">mixed</span>{% endif %}
+        </td>
+        <td class="{{ 'ok-text' if m.tracks_agree else '' }}" title="{{ 'Track count equals the matched edition' if m.tracks_agree else 'Does not equal the matched edition' if matched else '' }}">{{ c.disc_counts|join(" + ") }}</td>
+        <td class="nowrap" title="{{ ev(p, 'years') }}">
+          {%- if p.original_year %}{{ p.original_year }}{% endif -%}
+          {%- if p.reissue_year %}{% if p.original_year %} → {% else %}re {% endif %}{{ p.reissue_year }}{% endif -%}
+        </td>
+        <td class="catalog">
+          {% for cat in p.catalog_numbers or [] %}<span class="mono {% if cat in (m.matched_catalogs or []) %}matched{% endif %}" title="{{ ev(p, 'catalog_numbers') }}{% if cat in (m.matched_catalogs or []) %}Matches the edition's catalog number{% endif %}">{{ cat }}</span>{% endfor %}
+          {% for bc in p.barcodes or [] %}<span class="mono muted" title="{{ ev(p, 'barcodes') }}">{{ bc }}</span>{% endfor %}
+          {% if p.label %}<span class="label" title="{{ ev(p, 'label') }}">{{ p.label }}</span>{% endif %}
+        </td>
+        <td class="flags">
+          {% if p.remaster %}<span class="badge {{ 'flag' if p.remaster == 'folder' else 'weak' }}" title="{{ ev(p, 'remaster') }}">remaster{% if p.remaster == "track" %}?{% endif %}</span>{% endif %}
+          {% for f in p.flags or [] %}<span class="badge flag" title="{{ ev(p, 'flags', f) }}">{{ f }}</span>{% endfor %}
+          {% for t in p.territories or [] %}<span class="badge" title="{{ ev(p, 'territories', t) }}">{{ t }}</span>{% endfor %}
+        </td>
+        <td class="sidecars">
+          {% if c.sidecars.log %}<span class="icon {% if logs %}log-{{ log_verdict }}{% endif %}" title="{{ c.sidecars.log }} rip log(s){% if logs %}: {{ log_verdict }}{% endif %}">log</span>{% endif %}
+          {% if c.sidecars.cue %}<span class="icon" title="{{ c.sidecars.cue }} cue sheet(s)">cue</span>{% endif %}
+          {% if c.sidecars.image %}<span class="icon" title="{{ c.sidecars.image }} image(s)">art</span>{% endif %}
+          {% if c.sidecars.scans %}<span class="icon" title="{{ c.sidecars.scans }} file(s) in a scans folder">scans</span>{% endif %}
+          {% if p.rip_tool %}<span class="badge" title="{{ ev(p, 'rip_tool') }}">{{ p.rip_tool }}</span>{% endif %}
+          <div class="scores small muted">
+            <span title="Rip quality: log {{ 'yes' if rq.log else 'no' }}, secure ripper {{ 'yes' if rq.secure_ripper else ('no' if rq.read else 'unknown') }}, AccurateRip/checksum {{ 'ok' if rq.verified else ('not ok' if rq.read else 'not read yet') }}, cue {{ 'yes' if rq.cue else 'no' }}">rip {{ rq.score }}/4</span>
+            · <span title="Completeness: all tracks of the matched edition {{ 'yes' if comp.tracks else 'no' }}, cover art {{ 'yes' if comp.art else 'no' }}">complete {{ comp.score }}/2</span>
+          </div>
+        </td>
+        <td>
+          {% if c.has_free_slot %}<span class="badge ok">free slot</span>{% else %}<span class="badge">queue {{ c.queue_length }}</span>{% endif %}
+          <span class="muted">{{ c.upload_speed|speed }}</span>
+        </td>
+        <td class="num">{{ c.total_size|mb }}</td>
+        <td class="actions">
+          {% set dl = downloads.get(c.id) %}
+          {% if dl %}{% include "_download_status.html" %}
+          {% else %}
+          {% include "_download_button.html" %}
+          {% endif %}
+          {% if li.state in ("queued", "fetching") %}<span class="small muted">fetching log…</span>
+          {% elif li.state == "failed" %}<span class="small error-text" title="{{ li.error }}">log fetch failed</span>
+          {% elif (c.sidecars.log or c.sidecars.cue) and not li.state %}
+          <button class="small" hx-post="/candidates/{{ c.id }}/prefetch" hx-swap="outerHTML">Fetch log</button>
+          {% endif %}
+        </td>
+      </tr>
+      <tr class="detail" hidden>
+        <td colspan="12">
+          <p class="mono small">{{ c.username }} · {{ c.folder }}</p>
+          <div class="detail-grid">
+            <div>
+            {% if m.track_diffs %}
+            <table class="files">
+              <thead><tr><th>Track</th><th class="num">Folder</th><th class="num">Edition</th><th class="num">Diff</th></tr></thead>
+              {% for t in m.track_diffs %}
+              <tr class="kind-audio">
+                <td>{{ t.name }}</td>
+                <td class="num">{{ t.length|duration }}</td>
+                <td class="num">{{ t.edition_length|duration }}</td>
+                <td class="num {% if t.diff is not none and (t.diff > 2 or t.diff < -2) %}error-text{% endif %}">{{ t.diff|signed }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            <p class="small muted">Compared with {{ editions.get(matched[0])|edition }}</p>
+            {% endif %}
+            {% if logs or li.cues %}
+            {% set mine, others = disc_id_releases(li, rg_mbid) %}
+            <div class="log-summary small">
+              {% for l in logs %}
+              <p><strong>{{ l.name }}</strong>:
+                {% if not l.parsed %}{{ l.ripper or "unknown ripper" }} log present, not parsed
+                {% else %}{{ l.ripper }}, {{ l.read_mode or "read mode ?" }}{% if l.secure is false %} <span class="error-text">(not secure)</span>{% endif %};
+                AccurateRip {{ l.accurate }} ok{% if l.inaccurate %}, <span class="error-text">{{ l.inaccurate }} may not be accurate</span>{% endif %};
+                CRC {{ l.crc_checked - l.crc_mismatches }}/{{ l.crc_checked }} match;
+                {% if l.errors %}<span class="error-text">errors reported</span>{% elif l.errors is false %}no errors{% else %}no status line{% endif %};
+                {{ "checksum present" if l.checksum else "no checksum" }}
+                {% for d in l.disc_ids %}<br><span class="mono">{{ d.id }}</span>{% if d.data_track_dropped %} (data track dropped){% endif %}{% endfor %}
+                {% endif %}
+              </p>
+              {% endfor %}
+              {% if mine %}<p class="ok-text">Disc ID matches {{ mine|length }} edition(s) of this album.</p>
+              {% elif logs %}<p class="muted">No edition of this album carries these disc IDs in MusicBrainz.</p>{% endif %}
+              {% for o in others %}<p class="muted">Also on: {{ o.rg_title or o.title }} ({{ o.date or "no date" }}), another release group.</p>{% endfor %}
+              {% for cue in li.cues or [] %}<p><strong>{{ cue.name }}</strong>: {% if cue.catalog %}CATALOG {{ cue.catalog }}{% else %}no CATALOG{% endif %}{% if cue.isrcs %}, {{ cue.isrcs|length }} ISRCs{% endif %}</p>{% endfor %}
+            </div>
+            {% endif %}
+            {% if m.signals %}
+            <ul class="signals small">
+              {% for s in m.signals %}<li><span class="{{ 'ok-text' if s.weight > 0 else 'error-text' }}">{{ '%+g'|format(s.weight) }}</span> {{ s.name|replace('_', ' ') }}: {{ s.detail }}</li>{% endfor %}
+            </ul>
+            {% endif %}
+            <table class="files">
+              {% for f in c.files %}
+              <tr class="kind-{{ f.kind }}">
+                <td>{% if f.disc %}<span class="muted">{{ f.disc }} \ </span>{% endif %}{% if f.in_scans %}<span class="muted">scans \ </span>{% endif %}{{ f.name }}</td>
+                <td class="num">{{ f.length|duration }}</td>
+                <td class="num">{% if f.bitDepth or f.sampleRate %}{{ f.bitDepth or "?" }}/{{ f.sampleRate|khz }}{% endif %}</td>
+                <td class="num">{{ f.size|mb }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            </div>
+            {% if p.evidence %}
+            <table class="evidence">
+              <thead><tr><th>Hint</th><th>Token</th><th>Read as</th><th>Found in</th></tr></thead>
+              {% for key, items in p.evidence.items() %}{% for e in items %}
+              <tr><td class="muted">{{ key|replace("_", " ") }}</td><td class="mono">{{ e.token }}</td><td>{{ e.meaning }}</td><td class="muted small">{{ e.segment }}</td></tr>
+              {% endfor %}{% endfor %}
+            </table>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>

@@ -1,0 +1,450 @@
+# Folder-name parser fixtures.
+#
+# Each album group gives the artist, album title and edition label names the parser is
+# told about. Each case is a folder path (backslash separated, as slskd reports them) and
+# the expected parse. Fields not listed under `expect` must come out empty: that is how
+# the traps (album titles, artist names, look-alike tokens) are checked.
+#
+# `files` defaults to three FLAC tracks. A file entry is a name relative to the folder, or
+# a mapping {name, bitDepth, sampleRate} to stand in for slskd's file attributes.
+# `sidecars` and `quality_from` are only checked when listed.
+#
+# Checked fields: original_year, reissue_year, catalog_numbers, barcodes, label, source,
+# store, bit_depth, sample_rate, mixed_quality, remaster, flags, territories, rip_tool.
+
+- artist: Radiohead
+  album: OK Computer
+  labels: [Parlophone, Capitol Records, EMI, XL Recordings, Toshiba-EMI]
+  cases:
+    - path: 'Music\Radiohead\1997 - OK Computer [CDP 7243 8 55229 2 5]'
+      note: EMI catalog number with digit groups; the digits are also the UPC
+      expect: {original_year: 1997, catalog_numbers: ['CDP 7243 8 55229 2 5'], barcodes: ['724385522925']}
+    - path: 'Music\Radiohead\Radiohead - OK Computer (1997) [FLAC]'
+      expect: {original_year: 1997}
+    - path: 'share\Radiohead\OK Computer (1997) [2009 Collector''s Edition] [Parlophone]'
+      expect: {original_year: 1997, reissue_year: 2009, label: Parlophone}
+    - path: 'Lossless\Radiohead\OK Computer OKNOTOK 1997 2017'
+      files: ['CD1\01.flac', 'CD1\02.flac', 'CD2\01.flac', 'CD2\02.flac']
+      note: upper-case word + space + year is a year, not a catalog number; CD1 is not a source
+      expect: {original_year: 1997, reissue_year: 2017}
+    - path: 'Music\Radiohead\OK Computer [Japan TOCP-50201]'
+      expect: {catalog_numbers: [TOCP-50201], territories: [JP]}
+    - path: 'Music\Radiohead\OK Computer (24-96 Vinyl Rip)'
+      expect: {source: Vinyl, bit_depth: 24, sample_rate: 96000, quality_from: path}
+    - path: 'Music\Radiohead\OK Computer [WEB FLAC 16-44.1]'
+      expect: {source: WEB, bit_depth: 16, sample_rate: 44100}
+    - path: 'Music\Radiohead\OK Computer (Qobuz 24bit-44.1kHz)'
+      expect: {source: WEB, store: Qobuz, bit_depth: 24, sample_rate: 44100}
+    - path: 'Music\Radiohead\OK Computer'
+      files: ['01 - Airbag (Remastered).flac', '02 - Paranoid Android (Remastered).flac', '03 - Subterranean Homesick Alien.flac']
+      note: remaster only in track names is the weak kind
+      expect: {remaster: track}
+    - path: 'Music\Radiohead\OK Computer [EAC-FLAC-CUE-LOG]'
+      files: ['01.flac', '02.flac', '03.flac', 'OK Computer.log', 'OK Computer.cue']
+      expect: {rip_tool: EAC, sidecars: {log: 1, cue: 1}}
+    - path: 'Music\Radiohead\OK Computer [MFSL UDCD 735]'
+      expect: {flags: [MFSL], catalog_numbers: [UDCD 735]}
+    - path: 'Music\Radiohead\OK Computer [CD1 FLAC 24-96 MP3-320]'
+      note: CD1, FLAC, 24-96 and MP3-320 are none of them catalog numbers
+      expect: {bit_depth: 24, sample_rate: 96000}
+    - path: 'Music\Radiohead\OK Computer'
+      files: ['724385522925 - 01 Airbag.flac', '724385522925 - 02 Paranoid Android.flac', '724385522925 - 03 Lucky.flac']
+      note: long numeric file prefixes are not barcodes
+      expect: {}
+    - path: 'Music\Radiohead\OK Computer'
+      files: ['01.flac', '02.flac', '03.flac', 'OK Computer (XLD).log', 'OK Computer.cue']
+      expect: {rip_tool: XLD, sidecars: {log: 1, cue: 1}}
+    - path: 'Music\Radiohead\OK Computer'
+      files: ['01.flac', '02.flac', '03.flac', 'folder.jpg', 'Scans\front.jpg', 'Scans\back.jpg', 'info.nfo']
+      expect: {sidecars: {image: 3, scans: 2, text: 1}}
+    - path: 'Music\Radiohead\OK Computer [16-44]'
+      files:
+        - {name: '01.flac', bitDepth: 24, sampleRate: 96000}
+        - {name: '02.flac', bitDepth: 24, sampleRate: 96000}
+        - {name: '03.flac', bitDepth: 16, sampleRate: 44100}
+      note: slskd attributes beat path tokens; mixed folders report the most common value
+      expect: {bit_depth: 24, sample_rate: 96000, mixed_quality: true, quality_from: files}
+    - path: 'Music\Radiohead\OK Computer [24-192]'
+      files:
+        - {name: '01.flac', bitDepth: null, sampleRate: null}
+        - {name: '02.flac', bitDepth: null, sampleRate: null}
+      note: null attributes fall back to the path
+      expect: {bit_depth: 24, sample_rate: 192000, quality_from: path}
+    - path: 'Music\Radiohead\OK Computer [Promo] [OOP]'
+      expect: {flags: [Promo, OOP]}
+    - path: 'Music\Radiohead\OK Computer (Japanese Edition) [Bonus Track]'
+      expect: {territories: [JP], flags: [Bonus]}
+    - path: 'Music\Radiohead\OK Computer [dBpoweramp FLAC]'
+      expect: {rip_tool: dBpoweramp}
+    - path: 'Music\Radiohead\OK Computer (whipper)'
+      expect: {rip_tool: whipper}
+    - path: 'Music\Radiohead\OK Computer [CUERipper]'
+      files: ['01.flac', '02.flac', '03.flac', 'OK Computer.log']
+      expect: {rip_tool: CUERipper, sidecars: {log: 1}}
+    - path: 'Music\Radiohead\OK Computer [Parlaphone]'
+      note: fuzzy label match tolerates a typo
+      expect: {label: Parlophone}
+    - path: 'Music\Radiohead\OK Computer [Sub Pop]'
+      note: a label that no edition of this album has is never reported
+      expect: {}
+    - path: 'Music\Radiohead\OK Computer (1997-2017)'
+      expect: {original_year: 1997, reissue_year: 2017}
+    - path: 'Live\Radiohead\2001-05-12 Paris'
+      note: a date gives its year
+      expect: {original_year: 2001}
+    - path: 'Music\Radiohead\OK Computer [TOCP-1997]'
+      note: catalog digits that look like a year
+      expect: {catalog_numbers: [TOCP-1997]}
+    - path: 'Music\Radiohead\OK Computer [0724385522925]'
+      expect: {barcodes: ['0724385522925']}
+    - path: 'Music\Radiohead\OK Computer [Toshiba-EMI TOCP-50201] [Japan] [CD]'
+      expect: {label: Toshiba-EMI, catalog_numbers: [TOCP-50201], territories: [JP], source: CD}
+
+- artist: Radiohead
+  album: In Rainbows
+  labels: [XL Recordings, TBD Records]
+  cases:
+    - path: 'Music\Radiohead\In Rainbows (2007) (web)'
+      expect: {original_year: 2007, source: WEB}
+    - path: 'Music\Radiohead\In Rainbows [XL Recordings XLCD 324]'
+      note: two-letter label; the CD inside XLCD is not a source
+      expect: {label: XL Recordings, catalog_numbers: [XLCD 324]}
+    - path: 'Music\Radiohead\In Rainbows (Deluxe) [2007]'
+      files: ['Disc 1\01.flac', 'Disc 1\02.flac', 'Disc 2\01.flac']
+      expect: {flags: [Deluxe], original_year: 2007}
+    - path: 'Music\Radiohead\In Rainbows [16bit]'
+      expect: {bit_depth: 16, quality_from: path}
+    - path: 'Music\Radiohead\In Rainbows [96kHz]'
+      expect: {sample_rate: 96000, quality_from: path}
+    - path: 'Music\Radiohead\In Rainbows [TBD Records] [US] [2CD]'
+      expect: {label: TBD Records, territories: [US], source: CD}
+
+- artist: Nirvana
+  album: Nevermind
+  labels: [DGC, Geffen Records, Universal Music, MCA]
+  cases:
+    - path: 'Music\Nirvana\1991 - Nevermind [DGCD-24425]'
+      expect: {original_year: 1991, catalog_numbers: [DGCD-24425]}
+    - path: 'Music\Nirvana\Nevermind (20th Anniversary Super Deluxe Edition) [2011]'
+      expect: {flags: [Anniversary, Deluxe], original_year: 2011}
+    - path: 'Music\Nirvana\Nevermind (1991) [Geffen GED 24425] [Germany]'
+      expect: {original_year: 1991, label: Geffen Records, catalog_numbers: [GED 24425], territories: [DE]}
+    - path: 'Music\Nirvana\Nevermind [DGC] [US 1st press]'
+      expect: {label: DGC, territories: [US], flags: [First press]}
+    - path: 'Music\Nirvana\Nevermind (2011 Remaster) [16-44]'
+      expect: {reissue_year: 2011, remaster: folder, bit_depth: 16, sample_rate: 44100}
+    - path: 'Music\Nirvana\Nevermind [SACD] [Universal UIGY-9031]'
+      expect: {source: SACD, label: Universal Music, catalog_numbers: [UIGY-9031]}
+    - path: 'Music\Nirvana\Nevermind (Mobile Fidelity) [MFSL 1-25]'
+      expect: {flags: [MFSL], catalog_numbers: [MFSL 1-25]}
+
+- artist: Prince
+  album: '1999'
+  labels: [Warner Bros. Records]
+  cases:
+    - path: 'Music\Prince\Prince - 1999 (1982) [Remastered 2019]'
+      note: the album title is a year
+      expect: {original_year: 1982, reissue_year: 2019, remaster: folder}
+    - path: 'Music\Prince\1999'
+      expect: {}
+    - path: 'Music\Prince\1999 (Super Deluxe Edition) [Warner Bros. 2019] [24-96]'
+      expect: {flags: [Deluxe], label: Warner Bros. Records, original_year: 2019, bit_depth: 24, sample_rate: 96000}
+
+- artist: Japan
+  album: Tin Drum
+  labels: [Virgin]
+  cases:
+    - path: 'Music\Japan\Japan - Tin Drum (1981) [CDV 2209]'
+      note: the artist is called Japan
+      expect: {original_year: 1981, catalog_numbers: [CDV 2209]}
+    - path: 'Music\Japan\Tin Drum [2003 Remaster] [Japan TOCP-3456]'
+      note: but a bracketed Japan tag is still a territory
+      expect: {reissue_year: 2003, remaster: folder, territories: [JP], catalog_numbers: [TOCP-3456]}
+    - path: 'Music\Japan\Tin Drum (1981) [Virgin] [UK]'
+      expect: {original_year: 1981, label: Virgin, territories: [GB]}
+
+- artist: Harmonia
+  album: Deluxe
+  labels: [Brain, Grönland Records]
+  cases:
+    - path: 'Music\Harmonia\Harmonia - Deluxe (1975)'
+      note: Deluxe is the real title
+      expect: {original_year: 1975}
+    - path: 'Music\Harmonia\Deluxe (1975) [2016 Reissue] [Grönland]'
+      expect: {original_year: 1975, reissue_year: 2016, flags: [Reissue], label: Grönland Records}
+    - path: 'Music\Harmonia\Deluxe (Deluxe Edition) [Brain]'
+      note: the title is blanked once; the edition marker in brackets still counts
+      expect: {flags: [Deluxe], label: Brain}
+
+- artist: Fiona Apple
+  album: Tidal
+  labels: [Clean Slate, Work, Columbia]
+  cases:
+    - path: 'Music\Fiona Apple\Tidal (1996)'
+      note: Tidal is the title, not the store
+      expect: {original_year: 1996}
+    - path: 'Music\Fiona Apple\Tidal (1996) [Columbia CK 67439]'
+      expect: {original_year: 1996, label: Columbia, catalog_numbers: [CK 67439]}
+    - path: 'Music\Fiona Apple\Tidal [Tidal 24-44.1 WEB]'
+      expect: {source: WEB, store: Tidal, bit_depth: 24, sample_rate: 44100}
+
+- artist: Various Artists
+  album: Charlotte's Web
+  labels: [Hanna-Barbera Records]
+  cases:
+    - path: 'OST\Charlotte''s Web (1973)'
+      expect: {original_year: 1973}
+    - path: 'OST\Various\Webster Hall Live 2004'
+      note: web inside a word
+      expect: {original_year: 2004}
+    - path: 'OST\Charlotte''s Web [Webcast Bootleg]'
+      expect: {}
+
+- artist: Pink Floyd
+  album: The Dark Side of the Moon
+  labels: [Harvest, Capitol Records, EMI, Toshiba-EMI, Mobile Fidelity Sound Lab]
+  cases:
+    - path: 'Music\Pink Floyd\1973 - The Dark Side of the Moon [MFSL UDCD 517]'
+      expect: {original_year: 1973, flags: [MFSL], catalog_numbers: [UDCD 517]}
+    - path: 'Music\Pink Floyd\Dark Side Of The Moon (1973) [Japan Black Triangle CP35-3017]'
+      expect: {original_year: 1973, territories: [JP], catalog_numbers: [CP35-3017]}
+    - path: 'Music\Pink Floyd\The Dark Side Of The Moon [SACD 30th Anniversary] [EMI 5821362]'
+      expect: {source: SACD, flags: [Anniversary], label: EMI, catalog_numbers: [EMI 5821362]}
+    - path: 'Vinyl Rips\Pink Floyd\Dark Side of the Moon (1973) [Harvest SHVL 804] [UK] [24-192 needledrop]'
+      expect: {original_year: 1973, source: Vinyl, label: Harvest, catalog_numbers: [SHVL 804], territories: [GB], bit_depth: 24, sample_rate: 192000}
+    - path: 'Music\Pink Floyd\The Dark Side of the Moon (2011 Remaster)'
+      files: ['01 - Speak to Me (2011 Remaster).flac', '02 - Breathe (2011 Remaster).flac']
+      note: a folder-level remaster wins over track names
+      expect: {reissue_year: 2011, remaster: folder}
+    - path: 'Music\Pink Floyd\Dark Side of the Moon [DCC GZS-1018] [Gold]'
+      expect: {flags: [DCC, Gold], catalog_numbers: [GZS-1018]}
+    - path: 'Music\Pink Floyd\Dark Side of the Moon (Mobile Fidelity Sound Lab) [Gold CD]'
+      note: label named in full is also the MFSL marker; Gold CD is a gold disc on CD
+      expect: {label: Mobile Fidelity Sound Lab, flags: [MFSL, Gold], source: CD}
+
+- artist: Pink Floyd
+  album: Wish You Were Here
+  labels: [Harvest, Columbia]
+  cases:
+    - path: 'Music\Pink Floyd\Wish You Were Here [RM 2011]'
+      expect: {reissue_year: 2011, remaster: folder}
+    - path: 'Music\Pink Floyd\Wish You Were Here (1975) [Columbia PC 33453] [Canada]'
+      expect: {original_year: 1975, label: Columbia, catalog_numbers: [PC 33453], territories: [CA]}
+
+- artist: Björk
+  album: Homogenic
+  labels: [One Little Indian, Elektra, Polydor]
+  cases:
+    - path: 'Music\Björk\Björk - Homogenic (1997) [One Little Indian TPLP71CD]'
+      expect: {original_year: 1997, label: One Little Indian, catalog_numbers: [TPLP71CD]}
+    - path: 'Music\Bjork\Homogenic [Japan POCP-7247] [Bonus Track]'
+      expect: {territories: [JP], catalog_numbers: [POCP-7247], flags: [Bonus]}
+    - path: 'Music\Björk\Homogenic (1997) [Elektra 62061-2] [US]'
+      expect: {original_year: 1997, label: Elektra, territories: [US]}
+
+- artist: The Beatles
+  album: Abbey Road
+  labels: [Apple Records, Parlophone, EMI, Capitol Records]
+  cases:
+    - path: 'Music\The Beatles\1969 - Abbey Road (2009 Stereo Remaster) [CDP 0946 3 82468 2 4]'
+      expect: {original_year: 1969, reissue_year: 2009, remaster: folder, flags: [Stereo], catalog_numbers: ['CDP 0946 3 82468 2 4'], barcodes: ['094638246824']}
+    - path: 'Music\Beatles\Abbey Road [Apple PCS 7088] [UK 1st Press Vinyl] [24-96]'
+      expect: {label: Apple Records, catalog_numbers: [PCS 7088], territories: [GB], flags: [First press], source: Vinyl, bit_depth: 24, sample_rate: 96000}
+    - path: 'Music\The Beatles\Abbey Road (50th Anniversary Super Deluxe) [2019] [Qobuz 24-96]'
+      expect: {flags: [Anniversary, Deluxe], original_year: 2019, source: WEB, store: Qobuz, bit_depth: 24, sample_rate: 96000}
+    - path: 'Music\The Beatles\Abbey Road [Capitol C1-46446] [US]'
+      expect: {label: Capitol Records, catalog_numbers: [C1-46446], territories: [US]}
+
+- artist: The Beatles
+  album: The Beatles
+  labels: [Apple Records, Parlophone]
+  cases:
+    - path: 'Music\The Beatles\The Beatles (White Album) [1968]'
+      files: ['CD 1\01.flac', 'CD 1\02.flac', 'CD 2\01.flac']
+      note: CD 1 / CD 2 are disc folders, not a source
+      expect: {original_year: 1968}
+    - path: 'Music\The Beatles\The Beatles (Mono) [Parlophone] [2009 Remaster]'
+      expect: {flags: [Mono], label: Parlophone, reissue_year: 2009, remaster: folder}
+
+- artist: Peter Gabriel
+  album: Us
+  labels: [Real World, Geffen Records]
+  cases:
+    - path: 'Music\Peter Gabriel\Us (1992) [Real World]'
+      note: Us is the title, not the territory
+      expect: {original_year: 1992, label: Real World}
+    - path: 'Music\Peter Gabriel\Peter Gabriel - Us [Geffen GEFD-24473] [USA]'
+      expect: {label: Geffen Records, catalog_numbers: [GEFD-24473], territories: [US]}
+
+- artist: Fleetwood Mac
+  album: Rumours
+  labels: [Warner Bros. Records]
+  cases:
+    - path: 'Music\Fleetwood Mac\Rumours (1977) [Warner Bros. 3010-2] [West Germany]'
+      expect: {original_year: 1977, label: Warner Bros. Records, territories: [DE]}
+    - path: 'Music\Fleetwood Mac\Rumours [DCC Gold GZS-1118] (1977)'
+      expect: {flags: [DCC], catalog_numbers: [GZS-1118], original_year: 1977}
+    - path: 'Music\Fleetwood Mac\Rumours (Expanded Edition) [2004] [Rhino]'
+      note: Rhino is not a label of any edition we were given
+      expect: {flags: [Expanded], original_year: 2004}
+    - path: 'Music\Fleetwood Mac\Rumours (2013 Deluxe Edition, Remastered) [24-96 HDtracks]'
+      note: the remaster word sits in the same bracket group as the year
+      expect: {reissue_year: 2013, remaster: folder, flags: [Deluxe], source: WEB, store: HDtracks, bit_depth: 24, sample_rate: 96000}
+
+- artist: Miles Davis
+  album: Kind of Blue
+  labels: [Columbia, Legacy, Sony Music]
+  cases:
+    - path: 'Jazz\Miles Davis\1959 - Kind of Blue [Columbia CK 64935]'
+      expect: {original_year: 1959, label: Columbia, catalog_numbers: [CK 64935]}
+    - path: 'Jazz\Miles Davis\Kind of Blue (Mono) [Japan SICP-1234]'
+      expect: {flags: [Mono], territories: [JP], catalog_numbers: [SICP-1234]}
+    - path: 'Jazz\Miles Davis\Kind Of Blue (1959) [2008 50th Anniversary Legacy Edition] [2CD]'
+      expect: {original_year: 1959, reissue_year: 2008, flags: [Anniversary], label: Legacy, source: CD}
+    - path: 'Jazz\Miles Davis\Kind of Blue (SACD) [Sony SRGS 4520]'
+      expect: {source: SACD, label: Sony Music, catalog_numbers: [SRGS 4520]}
+    - path: 'Jazz\Miles Davis\Kind of Blue [MFSL 2-45011] [Vinyl] [24bit 96kHz]'
+      expect: {flags: [MFSL], catalog_numbers: [MFSL 2-45011], source: Vinyl, bit_depth: 24, sample_rate: 96000}
+
+- artist: Daft Punk
+  album: Random Access Memories
+  labels: [Columbia, Daft Life]
+  cases:
+    - path: 'Electronic\Daft Punk\Random Access Memories (2013) [WEB 24-88.2]'
+      expect: {original_year: 2013, source: WEB, bit_depth: 24, sample_rate: 88200}
+    - path: 'Electronic\Daft Punk\Random Access Memories (10th Anniversary Edition) (2023) [24bit-88.2kHz] [Bandcamp]'
+      expect: {flags: [Anniversary], original_year: 2023, source: WEB, store: Bandcamp, bit_depth: 24, sample_rate: 88200}
+    - path: 'Electronic\Daft Punk\Random Access Memories [Columbia 888837168625]'
+      expect: {label: Columbia, barcodes: ['888837168625']}
+    - path: 'Electronic\Daft Punk\Random Access Memories (2013) [Daft Life] [EU]'
+      expect: {original_year: 2013, label: Daft Life, territories: [XE]}
+
+- artist: Metallica
+  album: '...And Justice for All'
+  labels: [Elektra, Vertigo, Blackened]
+  cases:
+    - path: 'Metal\Metallica\1988 - ...And Justice for All [Elektra 9 60812-2]'
+      expect: {original_year: 1988, label: Elektra}
+    - path: 'Metal\Metallica\...And Justice For All (Remastered Deluxe Box Set 2018) [Blackened BLCKND040]'
+      expect: {reissue_year: 2018, remaster: folder, flags: [Deluxe], label: Blackened, catalog_numbers: [BLCKND040]}
+    - path: 'Metal\Metallica\And Justice For All (1988) [Vertigo 836 062-2] [Germany]'
+      expect: {original_year: 1988, label: Vertigo, territories: [DE]}
+
+- artist: Kate Bush
+  album: Hounds of Love
+  labels: [EMI, Fish People, EMI America]
+  cases:
+    - path: 'Music\Kate Bush\Hounds of Love (1985) [EMI CDP 7 46164 2]'
+      expect: {original_year: 1985, label: EMI, catalog_numbers: ['CDP 7 46164 2']}
+    - path: 'Music\Kate Bush\Hounds Of Love (2018 Remaster) [Fish People]'
+      expect: {reissue_year: 2018, remaster: folder, label: Fish People}
+    - path: 'Music\Kate Bush\Hounds of Love [Japan] [Toshiba EMI CP32-5045]'
+      expect: {territories: [JP], label: EMI, catalog_numbers: [CP32-5045]}
+
+- artist: Taylor Swift
+  album: '1989'
+  labels: [Big Machine, Republic]
+  cases:
+    - path: 'Pop\Taylor Swift\1989 (Deluxe Edition) [2014]'
+      expect: {flags: [Deluxe], original_year: 2014}
+    - path: 'Pop\Taylor Swift\1989 (Taylor''s Version) [2023] [24-48 WEB]'
+      expect: {original_year: 2023, source: WEB, bit_depth: 24, sample_rate: 48000}
+
+- artist: Atlantic Starr
+  album: Radiant
+  labels: [Atlantic, A&M Records]
+  cases:
+    - path: 'Music\Atlantic Starr\Atlantic Starr - Radiant (1981)'
+      note: the artist name contains a label name
+      expect: {original_year: 1981}
+    - path: 'Music\Atlantic Starr\Radiant (1981) [Atlantic SD 4833]'
+      expect: {original_year: 1981, label: Atlantic, catalog_numbers: [SD 4833]}
+
+- artist: Whitesnake
+  album: '1987'
+  labels: [EMI, Geffen Records]
+  cases:
+    - path: 'Music\Whitesnake\Whitesnake - 1987 (1987) [EMI CDP 7 46355 2]'
+      expect: {original_year: 1987, label: EMI, catalog_numbers: ['CDP 7 46355 2']}
+    - path: 'Music\Whitesnake\1987 (20th Anniversary) [2007]'
+      files: ['1987 - 01 Still of the Night.flac', '1987 - 02 Bad Boys.flac']
+      note: year-like track prefixes are ignored
+      expect: {flags: [Anniversary], original_year: 2007}
+
+- artist: Dead Kennedys
+  album: Fresh Fruit for Rotting Vegetables
+  labels: [Cherry Red, Alternative Tentacles]
+  cases:
+    - path: 'Music\Dead Kennedys\Fresh Fruit for Rotting Vegetables (1980) [Cassette Rip]'
+      expect: {original_year: 1980, source: Cassette}
+    - path: 'Music\Dead Kennedys\Fresh Fruit For Rotting Vegetables [Cherry Red BRED 10] [UK]'
+      expect: {label: Cherry Red, catalog_numbers: [BRED 10], territories: [GB]}
+
+- artist: Queen
+  album: A Night at the Opera
+  labels: [EMI, Elektra, Hollywood Records, Island]
+  cases:
+    - path: 'Music\Queen\A Night at the Opera [DVD-A 24-96]'
+      note: the A of DVD-A plus 24-96 is not a catalog number
+      expect: {source: DVD-A, bit_depth: 24, sample_rate: 96000}
+    - path: 'Music\Queen\A Night at the Opera [Blu-ray Pure Audio 24-96]'
+      expect: {source: Blu-ray, bit_depth: 24, sample_rate: 96000}
+    - path: 'Music\Queen\A Night At The Opera [SHM-CD] [Japan UICY-20004]'
+      expect: {flags: [SHM-CD], source: CD, territories: [JP], catalog_numbers: [UICY-20004]}
+    - path: 'Music\Queen\A Night at the Opera [Blu-spec CD2] [SICP-30123]'
+      expect: {flags: [Blu-spec], source: CD, catalog_numbers: [SICP-30123]}
+    - path: 'Music\Queen\A Night at the Opera (1975) [Hollywood HR-61065-2] [US]'
+      expect: {original_year: 1975, label: Hollywood Records, catalog_numbers: [HR-61065-2], territories: [US]}
+    - path: 'Music\Queen\A Night at the Opera (2011 Remaster) (Deluxe Edition) [Island 2765562]'
+      expect: {reissue_year: 2011, remaster: folder, flags: [Deluxe], label: Island}
+
+- artist: Led Zeppelin
+  album: Led Zeppelin IV
+  labels: [Atlantic, Swan Song]
+  cases:
+    - path: 'Music\Led Zeppelin\Led Zeppelin IV (1971) [2014 Remastering]'
+      expect: {original_year: 1971, reissue_year: 2014, remaster: folder}
+    - path: 'Music\Led Zeppelin\IV [Atlantic SD 19129] [US] [1971]'
+      expect: {label: Atlantic, catalog_numbers: [SD 19129], territories: [US], original_year: 1971}
+    - path: 'Music\Led Zeppelin\Led Zeppelin IV [Deluxe Edition] [Atlantic] [Italy]'
+      expect: {flags: [Deluxe], label: Atlantic, territories: [IT]}
+
+- artist: Simon & Garfunkel
+  album: Bookends
+  labels: [Columbia, CBS]
+  cases:
+    - path: 'Music\Simon & Garfunkel\Bookends (1968) [Mono] [CBS 63101] [Holland]'
+      expect: {original_year: 1968, flags: [Mono], label: CBS, catalog_numbers: [CBS 63101], territories: [NL]}
+    - path: 'Music\Simon and Garfunkel\Bookends [Columbia] [Stereo] [Vinyl 24-96]'
+      expect: {label: Columbia, flags: [Stereo], source: Vinyl, bit_depth: 24, sample_rate: 96000}
+
+- artist: Mono
+  album: Hymn to the Immortal Wind
+  labels: [Temporary Residence]
+  cases:
+    - path: 'Music\Mono\Mono - Hymn to the Immortal Wind (2009)'
+      note: the band is called Mono
+      expect: {original_year: 2009}
+    - path: 'Music\Mono\Hymn To The Immortal Wind [Temporary Residence TRR150] [Korea]'
+      expect: {label: Temporary Residence, catalog_numbers: [TRR150], territories: [KR]}
+
+- artist: Pearl Jam
+  album: Ten
+  labels: [Epic, Legacy]
+  cases:
+    - path: 'Music\Pearl_Jam-Ten-(CK66321)-REISSUE-CD-FLAC-2004-FATHEAD'
+      note: scene-style release name
+      expect: {original_year: 2004, catalog_numbers: [CK66321], source: CD, flags: [Reissue]}
+    - path: 'Music\Pearl Jam-Ten-WEB-2019-ENRiCH'
+      expect: {original_year: 2019, source: WEB}
+    - path: 'Music\[1991] Ten {EK 66321}'
+      expect: {original_year: 1991, catalog_numbers: [EK 66321]}
+    - path: 'Music\Pearl Jam - Ten [24B-96kHz] [Hi-Res]'
+      expect: {bit_depth: 24, sample_rate: 96000}
+    - path: 'FLAC\P\Pearl Jam\Pearl Jam - 1991 - Ten (2009 Legacy Edition, 2CD)'
+      expect: {original_year: 1991, reissue_year: 2009, label: Legacy, source: CD}
+    - path: 'Music\Pearl Jam - Ten (1991) [Epic 468884 2] [Austria]'
+      note: a bare numeric catalog with one digit group is too noisy to report
+      expect: {original_year: 1991, label: Epic, territories: [AT]}
+    - path: 'Music\Pearl Jam - Ten [MOFI 2-430] [SACD Hybrid]'
+      expect: {catalog_numbers: [MOFI 2-430], source: SACD, flags: [MFSL]}

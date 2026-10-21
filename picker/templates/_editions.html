@@ -1,0 +1,31 @@
+<div id="editions">
+{% if error %}
+  <p class="banner error">Could not load editions: {{ error }}</p>
+{% elif not editions %}
+  <p class="muted">MusicBrainz lists no releases for this album.</p>
+{% else %}
+  <p class="muted small">{{ editions|length }} editions. ★ pins one as the target: the table then shows only folders that could be it.</p>
+  <div class="table-wrap">
+  <table class="grid editions">
+    <thead><tr><th></th><th>Date</th><th>Country</th><th>Label</th><th>Catalog no.</th><th>Barcode</th><th>Format</th><th>Tracks</th><th>Notes</th></tr></thead>
+    <tbody>
+    {% for e in editions %}
+    <tr {% if album.target_release == e.id %}class="pinned"{% endif %}>
+      <td><button class="star" title="{{ 'Unpin' if album.target_release == e.id else 'Pin as target' }}"
+            hx-post="/album/{{ album.rg_mbid }}/target/{{ e.id }}" hx-target="#editions" hx-swap="outerHTML">
+            {{ "★" if album.target_release == e.id else "☆" }}</button></td>
+      <td class="nowrap"><a href="https://musicbrainz.org/release/{{ e.id }}" target="_blank" rel="noopener">{{ e.date or "—" }}</a></td>
+      <td>{{ e.country }}</td>
+      <td>{{ e.labels|join(", ") }}</td>
+      <td class="mono">{{ e.catalog_numbers|join(", ") }}</td>
+      <td class="mono">{{ e.barcode }}</td>
+      <td>{{ e.format_summary }}</td>
+      <td>{{ e.track_counts|join(" + ") }}</td>
+      <td>{{ e.disambiguation }}{% if e.status and e.status != "Official" %} <span class="badge">{{ e.status }}</span>{% endif %}{% if e.packaging %} <span class="muted small">{{ e.packaging }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endif %}
+</div>

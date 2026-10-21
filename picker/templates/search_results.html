@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Find album · Soulseek picker{% endblock %}
+{% block content %}
+<section>
+  {% include "_search_form.html" %}
+  {% if error %}<p class="banner error">{{ error }}</p>{% endif %}
+  {% if results %}
+  <table class="grid">
+    <thead><tr><th>Album</th><th>Artist</th><th>Type</th><th>First released</th><th></th></tr></thead>
+    <tbody>
+    {% for rg in results %}
+    <tr>
+      <td>{{ rg.title }}{% if rg.disambiguation %} <span class="muted">({{ rg.disambiguation }})</span>{% endif %}</td>
+      <td>{{ rg.artist_name }}</td>
+      <td>{{ rg["primary-type"] or "" }}{% for t in rg.get("secondary-types", []) %} · {{ t }}{% endfor %}</td>
+      <td>{{ rg["first-release-date"] or "" }}</td>
+      <td><a class="button" href="/album/{{ rg.id }}">Pick</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% elif not error %}
+  <p class="muted">No release groups found.</p>
+  {% endif %}
+</section>
+{% endblock %}

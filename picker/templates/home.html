@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+  <h1>Pick an album</h1>
+  {% include "_search_form.html" %}
+</section>
+
+<section>
+  <div class="toolbar">
+    <h2>Stuck in Lidarr</h2>
+    {% if lidarr_configured %}
+    <form method="post" action="/lidarr/stuck/refresh"><button class="small">Refresh</button></form>
+    <span class="small muted">{% if stuck.checked %}checked {{ stuck.checked[:16]|replace("T", " ") }} UTC{% else %}not checked yet{% endif %}</span>
+    {% endif %}
+  </div>
+  {% if not lidarr_configured %}
+    <p class="muted">Connect Lidarr in Settings to see monitored albums it has not found.</p>
+  {% elif stuck.albums %}
+  <table class="grid stuck">
+    <thead><tr><th>Album</th><th>Released</th><th></th></tr></thead>
+    <tbody>
+    {% for a in stuck.albums %}
+    <tr>
+      <td>{{ a.artist }} – {{ a.title }}</td>
+      <td class="nowrap">{{ a.release_date }}</td>
+      <td>{% if a.rg_mbid %}<a class="button" href="/album/{{ a.rg_mbid }}">Pick</a>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p class="muted">Nothing monitored has been missing for more than the stuck-days threshold.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Active jobs</h2>
+  {% if jobs %}
+  <ul class="plain">
+    {% for job in jobs %}
+    {% set a = albums.get(job.rg_mbid) %}
+    <li><span class="badge">{{ job.kind }}</span> {{ job.status }}
+      {% if a %}· <a href="/album/{{ a.rg_mbid }}">{{ a.artist }} – {{ a.title }}</a>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">Nothing running.</p>{% endif %}
+</section>
+
+<section>
+  <h2>Last imports</h2>
+  {% if recent %}
+  <table class="grid">
+    <thead><tr><th>Album</th><th>From</th><th>State</th><th>Started</th></tr></thead>
+    <tbody>
+    {% for i in recent %}
+    {% set a = albums.get(i.rg_mbid) %}
+    <tr>
+      <td><a href="/imports/{{ i.id }}">{% if a %}{{ a.artist }} – {{ a.title }}{% else %}{{ i.rg_mbid }}{% endif %}</a></td>
+      <td>{{ i.username or ("Lidarr" if i.source == "lidarr" else "") }}</td>
+      <td><span class="state state-{{ i.state }}">{{ i.state }}</span></td>
+      <td class="muted">{{ i.created_at|local }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">Nothing imported yet.</p>{% endif %}
+</section>
+{% endblock %}

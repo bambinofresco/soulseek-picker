@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Review · {{ album.title if album else "import" }} · Soulseek picker{% endblock %}
+{% block content %}
+<section class="album-header">
+  <h1>{% if album %}<a href="/album/{{ album.rg_mbid }}">{{ album.title }}</a>{% else %}Import {{ imp.id }}{% endif %}</h1>
+  <p class="subtitle">{% if album %}{{ album.artist }} · {% endif %}from {{ imp.username or "Lidarr" }}
+    · <span class="state state-{{ imp.state }}">{{ imp.state }}</span>{% if imp.state not in ("imported", "rejected") %} at step {{ imp.step }}{% endif %}</p>
+</section>
+{% if error %}<p class="banner error">{{ error }}</p>{% endif %}
+{% if imp.error %}<p class="banner {{ 'warn' if imp.state == 'blocked' else 'error' }}">{{ imp.error }}</p>{% endif %}
+{% if active %}<p class="progress-line" hx-get="/imports/{{ imp.id }}" hx-trigger="every 3s" hx-select="main" hx-target="main" hx-swap="outerHTML"><span class="spinner"></span> Working…</p>{% endif %}
+
+<section class="card review">
+  <h2>Edition</h2>
+  {% if edition %}
+    <p><a href="https://musicbrainz.org/release/{{ edition.id }}" target="_blank" rel="noopener">{{ edition|edition }}</a></p>
+  {% elif imp.release_mbid %}
+    <p class="mono">{{ imp.release_mbid }}</p>
+  {% else %}
+    <p class="banner warn">No edition chosen yet. Pick one below before importing.</p>
+  {% endif %}
+  {% if imp.state in ("review", "skipped", "blocked", "failed") and editions %}
+  <form method="post" action="/imports/{{ imp.id }}/edition" class="inline-form">
+    <select name="release_mbid">
+      {% for e in editions %}<option value="{{ e.id }}" {% if e.id == imp.release_mbid %}selected{% endif %}>{% if e.id in likely %}✓ {% endif %}{{ e|edition }}</option>{% endfor %}
+    </select>
+    <button type="submit">Change edition</button>
+  </form>
+  {% endif %}
+
+  <div class="actions-row">
+    {% if imp.state == "review" %}
+      <form method="post" action="/imports/{{ imp.id }}/import"><button class="primary" {% if not imp.release_mbid %}disabled{% endif %}>Import</button></form>
+    {% endif %}
+    {% if imp.state == "skipped" %}
+      <form method="post" action="/imports/{{ imp.id }}/force"><button class="primary">Force apply</button></form>
+      <span class="small muted">Reruns beets with strong_rec_thresh 1.0: it applies the chosen release whatever the distance.</span>
+    {% endif %}
+    {% if imp.state in ("blocked", "failed") and imp.step not in ("verify",) %}
+      <form method="post" action="/imports/{{ imp.id }}/retry"><button>Retry</button></form>
+    {% endif %}
+    {% if imp.state in ("review", "skipped", "blocked", "failed") and not imp.album_dir %}
+      <form method="post" action="/imports/{{ imp.id }}/reject"><button class="danger">Reject and try the next folder</button></form>
+      <span class="small muted">Deletes the download from {{ imp.source_dir }} (never anything in the library).</span>
+    {% endif %}
+  </div>
+</section>
+
+{% if imp.spectrograms %}
+<section>
+  <h2>Spectrograms</h2>
+  <p class="small muted">A lossy transcode shows a hard shelf below the top of the spectrum (often around 16 or 19 kHz).</p>
+  <div class="spectrograms">
+    {% for name in imp.spectrograms %}<a href="/imports/{{ imp.id }}/spectrogram/{{ name }}" target="_blank"><img src="/imports/{{ imp.id }}/spectrogram/{{ name }}" alt="Spectrogram {{ loop.index }}"></a>{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if imp.integrity %}
+<section>
+  <details {% if imp.integrity|selectattr("ok", "false")|list %}open{% endif %}>
+    <summary>Integrity: {{ imp.integrity|selectattr("ok")|list|length }} of {{ imp.integrity|length }} files pass</summary>
+    <table class="grid small">
+      {% for r in imp.integrity %}<tr><td>{{ r.name }}</td><td class="{{ 'ok-text' if r.ok else 'error-text' }}">{{ "ok" if r.ok else "fail" }}</td><td class="muted">{{ r.detail }}</td></tr>{% endfor %}
+    </table>
+  </details>
+</section>
+{% endif %}
+
+{% if imp.notes %}
+<section><h2>Notes</h2><ul>{% for n in imp.notes %}<li>{{ n }}</li>{% endfor %}</ul></section>
+{% endif %}
+
+{% if imp.album_dir %}<p class="mono small">In the library at {{ imp.album_dir }}</p>{% endif %}
+
+{% if imp.beets_output %}
+<section>
+  <details {% if imp.state == "skipped" %}open{% endif %}><summary>beets output</summary><pre class="output">{{ imp.beets_output }}</pre></details>
+</section>
+{% endif %}
+{% endblock %}

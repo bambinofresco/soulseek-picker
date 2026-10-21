@@ -1,0 +1,13 @@
+<form class="confirm" hx-post="/candidates/{{ c.id }}/download" hx-swap="outerHTML">
+  <label class="small muted">Tag as edition</label>
+  <select name="release_mbid">
+    {% if not editions %}<option value="">(editions unavailable; choose at import)</option>{% endif %}
+    {% for e in editions %}
+    <option value="{{ e.id }}" {% if e.id == preselect %}selected{% endif %}>{% if e.id in likely %}✓ {% endif %}{{ e|edition }}</option>
+    {% endfor %}
+  </select>
+  <span class="confirm-buttons">
+    <button type="submit" class="primary">Download</button>
+    <button type="button" hx-get="/candidates/{{ c.id }}/download-button" hx-target="closest form" hx-swap="outerHTML">Cancel</button>
+  </span>
+</form>

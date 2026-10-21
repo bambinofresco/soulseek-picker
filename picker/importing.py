@@ -1,0 +1,347 @@
+"""The import pipeline: a finished download becomes a tagged album folder in the library.
+
+Steps, each recorded on the Import row so a restart resumes where it stopped:
+
+    verify   file count, flac -t, mutagen; spectrograms for review
+    review   wait for Import / Change edition / Reject (skipped when auto_import is on)
+    artist   make sure Lidarr has the artist; read its folder
+    place    move the download to <artist folder>/<album folder>; never overwrite
+    beets    tag in place, pinned to the chosen release
+    lidarr   select the same release on the Lidarr album; rescan the artist folder
+    plex     partial scan of the album folder
+    done
+
+Nothing under the music library is ever deleted or overwritten. Reject deletes only
+inside the download directory.
+"""
+
+from __future__ import annotations
+
+import errno
+import os
+import posixpath
+import re
+import shutil
+from pathlib import Path
+
+from sqlmodel import select
+
+from . import audio, beets
+from .clients import services
+from .clients.http import ServiceError
+from .config import Settings, get_settings
+from .db import session
+from .jobs import JobFailed, handler, log_event, worker
+from .models import Album, Download, Import, Job, utcnow
+
+ILLEGAL = re.compile(r'[<>"|?*\x00-\x1f]')
+
+
+class Blocked(Exception):
+    """The pipeline needs the user (target folder exists, no edition chosen, ...)."""
+
+
+def _save(imp: Import, **fields) -> Import:
+    for name, value in fields.items():
+        setattr(imp, name, value)
+    with session() as s:
+        s.merge(imp)
+        s.commit()
+    return imp
+
+
+def _note(imp: Import, message: str) -> None:
+    _save(imp, notes=[*imp.notes, message])
+    log_event(imp.job_id, imp.rg_mbid, message)
+
+
+def safe_name(name: str) -> str:
+    """A folder name that works on every filesystem Lidarr and Plex might sit on."""
+    name = ILLEGAL.sub("", name.replace(":", " -").replace("/", "+").replace("\\", "+"))
+    name = re.sub(r"\s+", " ", name).strip().rstrip(".")
+    return name or "Unknown"
+
+
+def album_folder_name(template: str, album: Album) -> str:
+    year = (album.first_release_date or "")[:4]
+    name = template.format(album=album.title, artist=album.artist, year=year)
+    return safe_name(name.replace("()", "").replace("[]", ""))
+
+
+def within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def source_root(landed: Path) -> Path:
+    """slskd may nest the files in the remote folder's name: unwrap a lone subfolder."""
+    entries = list(landed.iterdir()) if landed.is_dir() else []
+    if len(entries) == 1 and entries[0].is_dir():
+        return entries[0]
+    return landed
+
+
+# Starting and controlling an import ------------------------------------------------------
+
+def start_import(dl: Download) -> Import:
+    from .downloading import landed_dir  # imported here: downloading starts imports
+
+    imp = Import(
+        download_id=dl.id, rg_mbid=dl.rg_mbid, release_mbid=dl.release_mbid, username=dl.username,
+        source_dir=str(landed_dir(dl, get_settings())),
+    )
+    with session() as s:
+        s.add(imp)
+        s.commit()
+        s.refresh(imp)
+    return enqueue(imp)
+
+
+def enqueue(imp: Import) -> Import:
+    job = worker.enqueue("import", {"import_id": imp.id}, rg_mbid=imp.rg_mbid)
+    return _save(imp, job_id=job.id)
+
+
+def approve(imp: Import) -> Import:
+    if not imp.release_mbid:
+        raise Blocked("choose the edition to tag it as first")
+    return enqueue(_save(imp, step="artist", state="importing", error=None))
+
+
+def force_apply(imp: Import) -> Import:
+    return enqueue(_save(imp, step="beets", state="importing", force=True, error=None))
+
+
+def retry(imp: Import) -> Import:
+    return enqueue(_save(imp, state="importing", error=None))
+
+
+def reject(imp: Import) -> Import:
+    """Delete the downloaded folder (download directory only) and close the import."""
+    settings = get_settings()
+    src = Path(imp.source_dir or "")
+    picker_root = settings.download_dir / "picker"
+    if imp.album_dir:
+        raise Blocked("this album is already in the library; the picker never deletes from it")
+    if src.is_dir():
+        if not within(src, picker_root) or src.resolve() == picker_root.resolve():
+            raise Blocked(f"refusing to delete {src}: not inside {picker_root}")
+        shutil.rmtree(src)
+        landed = _landed_root(src, picker_root)
+        if landed and landed.is_dir() and not any(landed.iterdir()):
+            landed.rmdir()
+    return _save(imp, state="rejected", finished_at=utcnow())
+
+
+def _landed_root(path: Path, picker_root: Path) -> Path | None:
+    """picker/<job-id> for any path inside it."""
+    try:
+        rel = path.resolve().relative_to(picker_root.resolve())
+    except ValueError:
+        return None
+    return picker_root / rel.parts[0] if rel.parts else None
+
+
+def change_edition(imp: Import, release_mbid: str) -> Import:
+    if imp.state not in ("review", "skipped", "blocked", "failed"):
+        raise Blocked(f"cannot change the edition while the import is {imp.state}")
+    with session() as s:
+        if imp.download_id and (dl := s.get(Download, imp.download_id)):
+            dl.release_mbid = release_mbid
+            s.add(dl)
+            s.commit()
+    return _save(imp, release_mbid=release_mbid, force=False)
+
+
+# The job ---------------------------------------------------------------------------------
+
+@handler("import")
+async def run_import(job: Job) -> None:
+    with session() as s:
+        imp = s.get(Import, job.payload["import_id"])
+    imp.job_id = job.id
+    try:
+        await _pipeline(imp)
+    except Blocked as exc:
+        _save(imp, state="blocked", error=str(exc))
+        log_event(job.id, imp.rg_mbid, f"Import waiting: {exc}")
+    except Exception as exc:
+        _save(imp, state="failed", error=str(exc), finished_at=utcnow())
+        raise
+
+
+async def _pipeline(imp: Import) -> None:
+    settings = get_settings()
+    if imp.step == "verify":
+        await _verify(imp, settings)
+        if not settings.auto_import:
+            _save(imp, step="review", state="review")
+            log_event(imp.job_id, imp.rg_mbid, "Downloaded and verified; waiting for review")
+            return
+        if not imp.release_mbid:
+            raise Blocked("auto_import is on but no edition was chosen; choose one and press Import")
+        _save(imp, step="artist", state="importing")
+    if imp.step == "review":
+        return
+
+    with session() as s:
+        album = s.get(Album, imp.rg_mbid)
+
+    if imp.step in ("artist", "place"):
+        artist_dir = await _artist_dir(imp, album, settings)
+        _place(imp, album, artist_dir, settings)
+    if imp.step == "beets":
+        if not await _beets(imp, settings):
+            return
+    if imp.step == "lidarr":
+        await _sync_lidarr(imp, settings)
+        _save(imp, step="plex")
+    if imp.step == "plex":
+        await _scan_plex(imp, settings)
+        _save(imp, step="done", state="imported", finished_at=utcnow())
+        log_event(imp.job_id, imp.rg_mbid, f"Imported into {imp.album_dir}")
+
+
+async def _verify(imp: Import, settings: Settings) -> None:
+    root = Path(imp.source_dir or "")
+    if not root.is_dir():
+        raise JobFailed(f"cannot see the download at {root}; check the path mapping")
+    root = source_root(root)
+    with session() as s:
+        dl = s.get(Download, imp.download_id) if imp.download_id else None
+    expected = len(dl.files) if dl else 0
+    ok, results, reason = await audio.verify(root, expected)
+    _save(imp, source_dir=str(root), integrity=results)
+    if not ok:
+        raise JobFailed(f"verification failed: {reason}")
+    picks = audio.spectrogram_picks(results, audio.audio_files(root))
+    names, error = await audio.spectrograms(picks, settings.spectrogram_dir / str(imp.id))
+    _save(imp, spectrograms=names)
+    if error:
+        _note(imp, f"No spectrogram: {error}")
+
+
+async def _artist_dir(imp: Import, album: Album, settings: Settings) -> Path:
+    """The artist's folder from Lidarr, adding the artist if needed."""
+    if not settings.lidarr_api_key:
+        _note(imp, "Lidarr is not configured; placing under the music directory by artist name")
+        return settings.music_dir / safe_name(album.artist)
+    if not album.artist_mbid:
+        raise JobFailed("the album has no MusicBrainz artist ID, so it cannot be added to Lidarr")
+    lidarr = services().lidarr
+    artist = await lidarr.artist_by_mbid(album.artist_mbid)
+    if artist is None:
+        lookup = await lidarr.lookup_artist(album.artist_mbid)
+        if lookup is None:
+            raise JobFailed(f"Lidarr cannot find artist {album.artist_mbid}")
+        artist = await lidarr.add_artist(
+            lookup,
+            root_folder=settings.lidarr_root_folder,
+            quality_profile_id=settings.lidarr_quality_profile_id,
+            metadata_profile_id=settings.lidarr_metadata_profile_id,
+            monitor=settings.lidarr_monitor,
+            monitor_new_items=settings.lidarr_monitor_new_items,
+        )
+        _note(imp, f"Added {album.artist} to Lidarr (monitor {settings.lidarr_monitor}, new items {settings.lidarr_monitor_new_items})")
+        # Wait for the refresh so the album exists in Lidarr before the edition is selected.
+        cmd = await lidarr.command("RefreshArtist", artistId=artist["id"])
+        await lidarr.wait_for_command(cmd["id"])
+    path = Path(artist["path"])
+    if not within(path, settings.music_dir):
+        raise JobFailed(f"Lidarr's folder for {album.artist} is {path}, outside the music library at {settings.music_dir}")
+    return path
+
+
+def _place(imp: Import, album: Album, artist_dir: Path, settings: Settings) -> None:
+    target = artist_dir / album_folder_name(settings.album_folder_template, album)
+    src = Path(imp.source_dir or "")
+    if imp.album_dir and Path(imp.album_dir).is_dir() and not src.exists():
+        _save(imp, step="beets")  # placed before a restart
+        return
+    if target.exists():
+        raise Blocked(f"{target} already exists; the picker never overwrites. Move or rename it, then Retry")
+    if not src.is_dir():
+        raise JobFailed(f"the downloaded folder {src} is gone")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.rename(src, target)
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+        shutil.move(str(src), str(target))  # different filesystems: copy, then remove the download
+    _save(imp, album_dir=str(target), step="beets")
+    log_event(imp.job_id, imp.rg_mbid, f"Placed at {target}")
+
+
+async def _beets(imp: Import, settings: Settings) -> bool:
+    album_dir = Path(imp.album_dir or "")
+    if imp.source == "lidarr" and not settings.beets_pretend:
+        # A re-imported or upgraded album may already be in the beets library: start clean.
+        await beets.forget_album(settings, imp.release_mbid, album_dir)
+    result = await beets.import_album(settings, album_dir, imp.release_mbid, force=imp.force,
+                                      pretend=settings.beets_pretend)
+    _save(imp, beets_output=result.output)
+    if result.imported:
+        _save(imp, step="lidarr")
+        log_event(imp.job_id, imp.rg_mbid, "beets tagged the album" + (" (forced)" if imp.force else ""))
+        return True
+    if result.skipped:
+        _save(imp, state="skipped")
+        log_event(imp.job_id, imp.rg_mbid, "beets skipped the album: the match was not strong enough. Review its output, then Force apply")
+        return False
+    raise JobFailed(f"beets exited {result.exit_code}: {(result.output.splitlines() or ['no output'])[-1]}")
+
+
+async def _sync_lidarr(imp: Import, settings: Settings) -> None:
+    if not settings.lidarr_api_key or imp.source == "lidarr":
+        return  # a retag of Lidarr's own import: its edition choice stands
+    lidarr = services().lidarr
+    album = await lidarr.album_by_foreign_id(imp.rg_mbid)
+    if album is None:
+        _note(imp, "Lidarr has no album for this release group; its metadata profile may exclude this album type")
+        return
+    releases = album.get("releases") or []
+    if not any(r.get("foreignReleaseId") == imp.release_mbid for r in releases):
+        _note(imp, "Lidarr does not list the chosen edition for this album: the artist's metadata profile filters it "
+                   "out (check its allowed release statuses and formats). The files are tagged; Lidarr will not show this edition.")
+    else:
+        changed = False
+        for r in releases:
+            # Exactly one may be monitored; Lidarr misbehaves with two.
+            want = r.get("foreignReleaseId") == imp.release_mbid
+            changed |= r.get("monitored") != want
+            r["monitored"] = want
+        if changed:
+            await lidarr.update_album(album)
+    artist_dir = str(Path(imp.album_dir).parent) if imp.album_dir else None
+    cmd = await lidarr.command("RescanFolders", folders=[artist_dir], filter="matched")
+    await lidarr.wait_for_command(cmd["id"])
+    stats = (await lidarr.album(album["id"])).get("statistics") or {}
+    have, want = stats.get("trackFileCount"), stats.get("trackCount")
+    if have != want:
+        _note(imp, f"Lidarr sees {have} of {want} track files for this album after the rescan")
+
+
+def plex_path(album_dir: Path, settings: Settings) -> str:
+    rel = album_dir.resolve().relative_to(settings.music_dir.resolve()).as_posix()
+    root = settings.plex_music_path or settings.music_dir.as_posix()
+    return posixpath.join(root, rel)
+
+
+async def _scan_plex(imp: Import, settings: Settings) -> None:
+    if not settings.plex_token or not settings.plex_section_id:
+        _note(imp, "Plex is not configured; no library scan")
+        return
+    try:
+        await services().plex.scan_path(plex_path(Path(imp.album_dir), settings))
+    except ServiceError as exc:
+        _note(imp, f"Plex scan failed: {exc.message}")  # the import itself stands
+
+
+def imports_for(download_ids: list[int]) -> dict[int, Import]:
+    with session() as s:
+        rows = s.exec(select(Import).where(Import.download_id.in_(download_ids)).order_by(Import.id)).all()
+    return {i.download_id: i for i in rows}

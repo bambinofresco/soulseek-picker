@@ -1,0 +1,220 @@
+X Lossless Decoder version 20230627 (155.0)
+
+XLD extraction logfile from 2026-10-21 12:00:00 +0000
+
+Radiohead / OK Computer
+
+Used drive : HL-DT-ST BD-RE  WH16NS40 (revision 1.05)
+
+Ripper mode             : XLD Secure Ripper
+Disable audio cache     : OK
+
+TOC of the extracted CD
+
+     Track |   Start  |  Length  | Start sector | End sector 
+    ---------------------------------------------------------
+        1  | 00:00:00 | 04:45:13 |         0    |    21387   
+        2  | 04:45:13 | 06:23:65 |     21388    |    50177   
+        3  | 11:09:03 | 04:29:14 |     50178    |    70366   
+        4  | 15:38:17 | 04:25:06 |     70367    |    90247   
+        5  | 20:03:23 | 04:59:18 |     90248    |   112690   
+        6  | 25:02:41 | 04:21:34 |    112691    |   132299   
+        7  | 29:24:00 | 01:57:29 |    132300    |   141103   
+        8  | 31:21:29 | 03:50:42 |    141104    |   158395   
+        9  | 35:11:71 | 04:45:10 |    158396    |   179780   
+       10  | 39:57:06 | 03:48:21 |    179781    |   196901   
+       11  | 43:45:27 | 04:19:71 |    196902    |   216397   
+       12  | 48:05:23 | 05:26:40 |    216398    |   240887   
+
+Track 01
+    Filename : /Users/me/Rips/01.flac
+    CRC32 hash (test run)  : 2B3C4D01
+    CRC32 hash             : 2B3C4D01
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 02
+    Filename : /Users/me/Rips/02.flac
+    CRC32 hash (test run)  : 2B3C4D02
+    CRC32 hash             : 2B3C4D02
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 03
+    Filename : /Users/me/Rips/03.flac
+    CRC32 hash (test run)  : 2B3C4D03
+    CRC32 hash             : 2B3C4D03
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 04
+    Filename : /Users/me/Rips/04.flac
+    CRC32 hash (test run)  : 2B3C4D04
+    CRC32 hash             : 2B3C4D04
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 05
+    Filename : /Users/me/Rips/05.flac
+    CRC32 hash (test run)  : 2B3C4D05
+    CRC32 hash             : 2B3C4D05
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 06
+    Filename : /Users/me/Rips/06.flac
+    CRC32 hash (test run)  : 2B3C4D06
+    CRC32 hash             : 2B3C4D06
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 07
+    Filename : /Users/me/Rips/07.flac
+    CRC32 hash (test run)  : 2B3C4D07
+    CRC32 hash             : 2B3C4D07
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 08
+    Filename : /Users/me/Rips/08.flac
+    CRC32 hash (test run)  : 2B3C4D08
+    CRC32 hash             : 2B3C4D08
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 09
+    Filename : /Users/me/Rips/09.flac
+    CRC32 hash (test run)  : 2B3C4D09
+    CRC32 hash             : 2B3C4D09
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 10
+    Filename : /Users/me/Rips/10.flac
+    CRC32 hash (test run)  : 2B3C4D0A
+    CRC32 hash             : 2B3C4D0A
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 11
+    Filename : /Users/me/Rips/11.flac
+    CRC32 hash (test run)  : 2B3C4D0B
+    CRC32 hash             : 2B3C4D0B
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 12
+    Filename : /Users/me/Rips/12.flac
+    CRC32 hash (test run)  : 2B3C4D0C
+    CRC32 hash             : 2B3C4D0C
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+TOC of the extracted CD
+
+     Track |   Start  |  Length  | Start sector | End sector 
+    ---------------------------------------------------------
+        1  | 00:00:00 | 04:44:30 |         0    |    21329   
+        2  | 04:44:30 | 06:23:38 |     21330    |    50092   
+        3  | 11:07:68 | 04:27:52 |     50093    |    70169   
+        4  | 15:35:45 | 04:24:60 |     70170    |    90029   
+        5  | 20:00:30 | 04:59:20 |     90030    |   112474   
+        6  | 24:59:50 | 04:21:48 |    112475    |   132097   
+        7  | 29:21:23 | 01:57:25 |    132098    |   140897   
+        8  | 31:18:48 | 03:50:47 |    140898    |   158194   
+        9  | 35:09:20 | 04:45:15 |    158195    |   179584   
+       10  | 39:54:35 | 03:48:40 |    179585    |   196724   
+       11  | 43:43:00 | 04:19:48 |    196725    |   216197   
+       12  | 48:02:48 | 05:26:40 |    216198    |   240687   
+
+Track 01
+    Filename : /Users/me/Rips/01.flac
+    CRC32 hash (test run)  : 2B3C4D01
+    CRC32 hash             : 2B3C4D01
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 02
+    Filename : /Users/me/Rips/02.flac
+    CRC32 hash (test run)  : 2B3C4D02
+    CRC32 hash             : 2B3C4D02
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 03
+    Filename : /Users/me/Rips/03.flac
+    CRC32 hash (test run)  : 2B3C4D03
+    CRC32 hash             : 2B3C4D03
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 04
+    Filename : /Users/me/Rips/04.flac
+    CRC32 hash (test run)  : 2B3C4D04
+    CRC32 hash             : 2B3C4D04
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 05
+    Filename : /Users/me/Rips/05.flac
+    CRC32 hash (test run)  : 2B3C4D05
+    CRC32 hash             : 2B3C4D05
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 06
+    Filename : /Users/me/Rips/06.flac
+    CRC32 hash (test run)  : 2B3C4D06
+    CRC32 hash             : 2B3C4D06
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 07
+    Filename : /Users/me/Rips/07.flac
+    CRC32 hash (test run)  : 2B3C4D07
+    CRC32 hash             : 2B3C4D07
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 08
+    Filename : /Users/me/Rips/08.flac
+    CRC32 hash (test run)  : 2B3C4D08
+    CRC32 hash             : 2B3C4D08
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 09
+    Filename : /Users/me/Rips/09.flac
+    CRC32 hash (test run)  : 2B3C4D09
+    CRC32 hash             : 2B3C4D09
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 10
+    Filename : /Users/me/Rips/10.flac
+    CRC32 hash (test run)  : 2B3C4D0A
+    CRC32 hash             : 2B3C4D0A
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 11
+    Filename : /Users/me/Rips/11.flac
+    CRC32 hash (test run)  : 2B3C4D0B
+    CRC32 hash             : 2B3C4D0B
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+Track 12
+    Filename : /Users/me/Rips/12.flac
+    CRC32 hash (test run)  : 2B3C4D0C
+    CRC32 hash             : 2B3C4D0C
+    AccurateRip v1 signature : 1234ABCD
+        ->Accurately ripped (v1+v2, confidence 3+2/5)
+
+No errors occurred
+
+End of status report
+
+-----BEGIN XLD SIGNATURE-----
+AbCdEf0123456789
+-----END XLD SIGNATURE-----

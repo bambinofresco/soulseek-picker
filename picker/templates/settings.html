@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Settings · Soulseek picker{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+{% if saved %}<p class="banner ok">Saved.</p>{% endif %}
+{% if error %}<p class="banner error">Not saved: {{ error }}</p>{% endif %}
+{% if slskd_dir_warning %}<p class="banner warn">{{ slskd_dir_warning }}</p>{% endif %}
+{% if locked %}<p class="muted small">Fields marked <span class="badge">env</span> are set by environment variables and can only be changed there.</p>{% endif %}
+
+<form method="post" action="/settings" class="settings">
+  {% for section, names in sections.items() %}
+  <fieldset class="card">
+    <legend>{{ section }}</legend>
+    {% for name in names %}
+    {% set kind = field_type(name) %}
+    {% set value = settings[name] if settings[name] is not none else "" %}
+    <label class="field {% if kind == 'bool' %}check{% endif %}">
+      {% if kind == "bool" %}
+        <input type="checkbox" name="{{ name }}" {% if value %}checked{% endif %} {% if name in locked %}disabled{% endif %}>
+        <span>{{ name }}</span>
+      {% else %}
+        <span>{{ name }}{% if name in locked %} <span class="badge">env</span>{% endif %}</span>
+        {% if kind == "secret" %}
+        <input type="password" name="{{ name }}" autocomplete="off" placeholder="{{ 'set; leave blank to keep' if value else 'not set' }}" {% if name in locked %}disabled{% endif %}>
+        {% else %}
+        <input type="{{ 'number' if kind == 'int' else 'text' }}" name="{{ name }}" value="{{ value }}" {% if name in locked %}disabled{% endif %}>
+        {% endif %}
+      {% endif %}
+    </label>
+    {% endfor %}
+    {% if section in section_service %}
+    <div class="test-row">
+      <button type="button" hx-post="/settings/test/{{ section_service[section] }}" hx-target="next .test-result" hx-swap="innerHTML">Test</button>
+      <span class="test-result"></span>
+    </div>
+    {% endif %}
+  </fieldset>
+  {% endfor %}
+  <p class="muted small">Test uses the saved settings; save first after changing a URL or key.</p>
+  <button type="submit" class="primary">Save</button>
+</form>
+{% endblock %}

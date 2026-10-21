@@ -1,0 +1,6 @@
+<a class="dl-status state-{{ dl.state }}" href="/downloads">
+  {%- if dl.state in ("queued", "enqueued") -%}Queued
+  {%- elif dl.state == "transferring" -%}{{ (100 * dl.bytes_done / (dl.bytes_total or 1))|round|int }}%
+  {%- elif dl.state == "completed" -%}Downloaded
+  {%- else -%}Failed{%- endif -%}
+</a>

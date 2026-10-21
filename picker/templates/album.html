@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ album.artist }} – {{ album.title }} · Soulseek picker{% endblock %}
+{% block content %}
+<section class="album-header">
+  <h1>{{ album.title }}</h1>
+  <p class="subtitle">{{ album.artist }}
+    {% if album.first_release_date %} · {{ album.first_release_date }}{% endif %}
+    {% if album.primary_type %} · {{ album.primary_type }}{% endif %}
+    · <a href="https://musicbrainz.org/release-group/{{ album.rg_mbid }}" target="_blank" rel="noopener">MusicBrainz</a>
+  </p>
+  {% if request.query_params.get("no_next") %}
+  <p class="banner warn">No other candidate left for this search. Try searching again.</p>
+  {% endif %}
+</section>
+
+<section>
+  <details class="editions-panel">
+    <summary>Editions{% if album.target_release %} <span class="badge flag">target pinned</span>{% endif %}</summary>
+    <div hx-get="/album/{{ album.rg_mbid }}/editions" hx-trigger="toggle once from:closest details" hx-swap="outerHTML">
+      <p class="muted">Loading…</p>
+    </div>
+  </details>
+</section>
+
+<section id="candidates" hx-get="/album/{{ album.rg_mbid }}/candidates" hx-trigger="load" hx-swap="outerHTML">
+  <p class="muted">Loading…</p>
+</section>
+
+<section>
+  <details>
+    <summary>Event log</summary>
+    <div hx-get="/album/{{ album.rg_mbid }}/events" hx-trigger="toggle from:closest details, every 5s [this.closest('details').open]"></div>
+  </details>
+</section>
+{% endblock %}

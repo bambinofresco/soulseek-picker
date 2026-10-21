@@ -1,0 +1,5 @@
+<form class="album-search" action="/search" method="get">
+  <input name="artist" placeholder="Artist" value="{{ artist or '' }}" autocomplete="off">
+  <input name="album" placeholder="Album, or paste a MusicBrainz URL" value="{{ album or '' }}" autocomplete="off">
+  <button type="submit">Find album</button>
+</form>

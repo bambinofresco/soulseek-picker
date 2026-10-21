@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>soulseek-picker</Name>
+  <Repository>soulseek-picker:latest</Repository>
+  <Network>media</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Overview>Hand-pick the exact edition of an album from Soulseek, tag it with beets and file it for Lidarr and Plex.</Overview>
+  <Category>MediaApp:Music Downloaders:</Category>
+  <WebUI>http://[IP]:[PORT:8765]/</WebUI>
+  <Config Name="Web UI port" Target="8765" Default="8765" Mode="tcp" Type="Port" Display="always" Required="true">8765</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/picker" Mode="rw" Type="Path" Display="always" Required="true">/mnt/user/appdata/picker</Config>
+  <Config Name="Soulseek downloads" Target="/downloads/soulseek" Default="/mnt/user/downloads/soulseek" Mode="rw" Type="Path" Display="always" Required="true" Description="The same host folder slskd downloads to, mounted at the same path as inside slskd.">/mnt/user/downloads/soulseek</Config>
+  <Config Name="Music library" Target="/music" Default="/mnt/user/media/music" Mode="rw" Type="Path" Display="always" Required="true" Description="Library root, same path as inside Lidarr.">/mnt/user/media/music</Config>
+  <Config Name="slskd URL" Target="SLSKD_URL" Default="http://gluetun:5030" Mode="" Type="Variable" Display="always" Required="true">http://gluetun:5030</Config>
+  <Config Name="slskd API key" Target="SLSKD_API_KEY" Default="" Mode="" Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Lidarr URL" Target="LIDARR_URL" Default="http://lidarr:8686" Mode="" Type="Variable" Display="always" Required="true">http://lidarr:8686</Config>
+  <Config Name="Lidarr API key" Target="LIDARR_API_KEY" Default="" Mode="" Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Webhook username" Target="WEBHOOK_USERNAME" Default="lidarr" Mode="" Type="Variable" Display="always" Required="false" Description="Username Lidarr's Webhook connection sends to /hooks/lidarr.">lidarr</Config>
+  <Config Name="Webhook password" Target="WEBHOOK_PASSWORD" Default="" Mode="" Type="Variable" Display="always" Required="false" Mask="true" Description="Password for the Lidarr webhook; the webhook is refused until this is set."/>
+  <Config Name="Plex URL" Target="PLEX_URL" Default="http://plex:32400" Mode="" Type="Variable" Display="always" Required="false">http://plex:32400</Config>
+  <Config Name="Plex token" Target="PLEX_TOKEN" Default="" Mode="" Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Plex music section ID" Target="PLEX_SECTION_ID" Default="" Mode="" Type="Variable" Display="always" Required="false"/>
+  <Config Name="MusicBrainz contact" Target="MB_CONTACT" Default="" Mode="" Type="Variable" Display="always" Required="true" Description="Email or URL for the MusicBrainz User-Agent."/>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Type="Variable" Display="advanced" Required="true">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Type="Variable" Display="advanced" Required="true">100</Config>
+  <Config Name="UMASK" Target="UMASK" Default="002" Mode="" Type="Variable" Display="advanced" Required="false">002</Config>
+</Container>

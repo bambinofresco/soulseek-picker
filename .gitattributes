@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.sh text eol=lf
+# Rip-log fixtures are byte-exact (EAC logs are UTF-16 with CRLF).
+tests/fixtures/logs/*.log binary
