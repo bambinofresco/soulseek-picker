@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from mutagen.flac import FLAC
+from sqlmodel import select
 
 from picker import albums, audio, beets, importing
 from picker.db import session
@@ -293,3 +294,107 @@ async def test_folder_template_extras_come_from_the_chosen_edition(env):
     imp = await run(importing.start_import(landed_download(settings, job_id=13)))
     imp = await run(importing.approve(imp))
     assert Path(imp.album_dir).name == "OK Computer (1997) [CDP 7243 8 55229 2 5]"
+
+
+# Damaged files: downloaded again automatically once ------------------------------------------
+
+@pytest.fixture
+def damaged(env, monkeypatch):
+    """flac -t fails for '02 Track.flac' while broken['on'] is set."""
+    broken = {"on": True}
+
+    async def tool(args, timeout=0):
+        if args[0] == "flac" and broken["on"] and args[-1].endswith("02 Track.flac"):
+            return 1, "02 Track.flac: ERROR while decoding data\n                      state = FLAC__STREAM_DECODER_ABORTED"
+        if args[0] == "sox":
+            Path(args[args.index("-o") + 1]).write_bytes(b"\x89PNG fake")
+        return 0, ""
+
+    monkeypatch.setattr(audio, "run_tool", tool)
+    return broken
+
+
+async def test_damaged_file_is_downloaded_again_then_import_continues(env, damaged):
+    settings, *_ = env
+    dl = landed_download(settings, job_id=20, nested=False)  # batch downloads land flat
+    imp = await run(importing.start_import(dl))
+    assert imp.state == "refetching" and imp.refetches == 1
+    folder = settings.download_dir / "picker" / "20"
+    assert sorted(p.name for p in folder.iterdir()) == ["01 Track.flac", "03 Track.flac", "folder.jpg"]  # only the bad one went
+    with session() as s:
+        dl = s.get(Download, dl.id)
+        jobs = s.exec(select(Job).where(Job.kind == "download")).all()
+    assert dl.refetch_import_id == imp.id and dl.state == "transferring"
+    assert dl.file_states[r"m\OKC\02 Track.flac"]["status"] == "pending"
+    assert dl.file_states[r"m\OKC\01 Track.flac"]["status"] == "done"
+    assert jobs  # the download job will fetch just that file
+
+    # The file arrives again, intact; the download job hands back to the import.
+    make_flac(folder / "02 Track.flac", 2)
+    damaged["on"] = False
+    importing.resume_after_refetch(imp.id)
+    imp = await run(_reload(imp))
+    assert imp.state == "review"
+    assert all(r["ok"] for r in imp.integrity)
+
+
+async def test_second_failure_stops_for_the_user(env, damaged):
+    settings, *_ = env
+    imp = await run(importing.start_import(landed_download(settings, job_id=21, nested=False)))
+    make_flac(settings.download_dir / "picker" / "21" / "02 Track.flac", 2)  # arrives, still broken
+    importing.resume_after_refetch(imp.id)
+    with pytest.raises(Exception, match="integrity"):
+        await run(_reload(imp))
+    imp = _reload(imp)
+    assert imp.state == "failed" and imp.step == "verify" and imp.refetches == 1
+    # The manual button still works, as often as you like.
+    importing.refetch(imp)
+    assert _reload(imp).state == "refetching" and _reload(imp).refetches == 2
+
+
+async def test_refetch_never_deletes_outside_the_download_folder(env):
+    settings, *_ = env
+    imp = await run(importing.start_import(landed_download(settings, job_id=22, nested=False)))
+    outside = settings.music_dir / "02 Track.flac"
+    outside.write_bytes(b"keep me")
+    imp.integrity = [{"name": "02 Track.flac", "path": str(outside), "ok": False, "detail": "x"}]
+    with pytest.raises(importing.Blocked):
+        importing.refetch(imp)
+    assert outside.exists()
+
+
+async def test_refetch_download_failure_fails_the_import(env, damaged, monkeypatch):
+    from picker import downloading
+    settings, *_ = env
+    imp = await run(importing.start_import(landed_download(settings, job_id=23, nested=False)))
+    with session() as s:
+        dl = s.exec(select(Download).where(Download.refetch_import_id == imp.id)).one()
+        job = s.exec(select(Job).where(Job.kind == "download")).first()
+
+    async def gave_up(job, dl):
+        raise downloading.JobFailed("you gave up on this folder")
+
+    monkeypatch.setattr(downloading, "_track", gave_up)
+    with pytest.raises(downloading.JobFailed):
+        await downloading.run_download(job)
+    imp = _reload(imp)
+    assert imp.state == "failed" and "you gave up" in imp.error
+    with session() as s:
+        assert s.get(Download, dl.id).refetch_import_id is None
+
+
+async def test_completed_refetch_resumes_the_import_instead_of_starting_a_new_one(env, damaged, monkeypatch):
+    from picker import downloading
+    settings, *_ = env
+    imp = await run(importing.start_import(landed_download(settings, job_id=24, nested=False)))
+    with session() as s:
+        job = s.exec(select(Job).where(Job.kind == "download")).first()
+
+    async def completed(job, dl):
+        return "completed"
+
+    monkeypatch.setattr(downloading, "_track", completed)
+    await downloading.run_download(job)
+    with session() as s:
+        assert len(s.exec(select(Import)).all()) == 1  # no second import
+    assert _reload(imp).state == "verifying"

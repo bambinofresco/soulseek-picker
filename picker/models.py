@@ -112,6 +112,7 @@ class Download(SQLModel, table=True):
     window_files: int | None = None  # how much is requested from the uploader at once
     window_bytes: int | None = None
     chunked: str | None = None  # "planned" (big folder) | "limit" (uploader queue limit) | None
+    refetch_import_id: int | None = None  # re-downloading files that failed this import's integrity check
     error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None
@@ -133,8 +134,9 @@ class Import(SQLModel, table=True):
     job_id: int | None = None
     # verify -> review -> artist -> place -> beets -> lidarr -> plex -> done
     step: str = "verify"
-    # verifying | review | importing | imported | skipped | blocked | failed | rejected
+    # verifying | refetching | review | importing | imported | skipped | blocked | failed | rejected
     state: str = "verifying"
+    refetches: int | None = None  # times files failing the integrity check were downloaded again
     source_dir: str | None = None  # where the files were before placing
     album_dir: str | None = None  # final folder in the library
     force: bool = False  # rerun beets with the strong_rec_thresh overlay

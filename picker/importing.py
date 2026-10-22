@@ -40,6 +40,13 @@ class Blocked(Exception):
     """The pipeline needs the user (target folder exists, no edition chosen, ...)."""
 
 
+class Refetching(Exception):
+    """Files that failed the integrity check are being downloaded again; the import waits."""
+
+
+AUTO_REFETCHES = 1  # automatic re-downloads of damaged files before asking the user
+
+
 def _save(imp: Import, **fields) -> Import:
     for name, value in fields.items():
         setattr(imp, name, value)
@@ -172,6 +179,61 @@ def _landed_root(path: Path, picker_root: Path) -> Path | None:
     return picker_root / rel.parts[0] if rel.parts else None
 
 
+def refetch(imp: Import) -> Import:
+    """Delete the files that failed the integrity check and download just those again.
+
+    The damaged copies must go first: slskd renames a download whose name already exists
+    (name_<ticks>.flac). Only files inside the download directory's picker/ folder are deleted.
+    """
+    from . import downloading  # imported here: downloading imports this module
+
+    settings = get_settings()
+    bad = [r for r in imp.integrity or [] if not r.get("ok") and r.get("path")]
+    if not bad:
+        raise Blocked("no file failed the integrity check")
+    if imp.album_dir:
+        raise Blocked("the album is already in the library")
+    with session() as s:
+        dl = s.get(Download, imp.download_id) if imp.download_id else None
+    if dl is None or dl.legacy_enqueue:
+        raise Blocked("this download can't be repeated file by file (no slskd batch destination)")
+    picker_root = settings.download_dir / "picker"
+    by_local = {downloading.local_path(dl, f, settings).resolve(): f for f in dl.files}
+    targets = []
+    for r in bad:
+        path = Path(r["path"])
+        remote = by_local.get(path.resolve())
+        if remote is None:
+            raise Blocked(f"can't tell which requested file {path.name} is")
+        if not within(path, picker_root):
+            raise Blocked(f"refusing to delete {path}: not inside {picker_root}")
+        targets.append((path, remote["filename"]))
+    for path, _ in targets:
+        path.unlink(missing_ok=True)
+    downloading.refetch_files(dl.id, [remote for _, remote in targets], imp.id)
+    names = ", ".join(path.name for path, _ in targets)
+    _save(imp, state="refetching", step="verify", refetches=(imp.refetches or 0) + 1, error=None)
+    log_event(imp.job_id, imp.rg_mbid, f"{names} failed the integrity check ({bad[0].get('detail')}); "
+                                       f"downloading {'it' if len(targets) == 1 else 'them'} again from {dl.username}")
+    return imp
+
+
+def resume_after_refetch(import_id: int) -> None:
+    with session() as s:
+        imp = s.get(Import, import_id)
+    if imp and imp.state == "refetching":
+        log_event(imp.job_id, imp.rg_mbid, "Downloaded the damaged files again; checking the folder")
+        enqueue(_save(imp, state="verifying", step="verify", error=None))
+
+
+def refetch_failed(import_id: int, message: str) -> None:
+    with session() as s:
+        imp = s.get(Import, import_id)
+    if imp and imp.state == "refetching":
+        _save(imp, state="failed", error=f"downloading the damaged files again failed: {message}", finished_at=utcnow())
+        log_event(imp.job_id, imp.rg_mbid, imp.error)
+
+
 def change_edition(imp: Import, release_mbid: str) -> Import:
     if imp.state not in ("review", "skipped", "blocked", "failed"):
         raise Blocked(f"cannot change the edition while the import is {imp.state}")
@@ -195,6 +257,8 @@ async def run_import(job: Job) -> None:
     except Blocked as exc:
         _save(imp, state="blocked", error=str(exc))
         log_event(job.id, imp.rg_mbid, f"Import waiting: {exc}")
+    except Refetching:
+        pass  # the download job resumes this import when the files arrive
     except Exception as exc:
         _save(imp, state="failed", error=str(exc), finished_at=utcnow())
         raise
@@ -243,6 +307,17 @@ async def _verify(imp: Import, settings: Settings) -> None:
     expected = len(dl.files) if dl else 0
     ok, results, reason = await audio.verify(root, expected)
     _save(imp, source_dir=str(root), integrity=results)
+    bad = [r for r in results if not r["ok"]]
+    if not ok and bad and (imp.refetches or 0) < AUTO_REFETCHES:
+        # Soulseek has no file hashes, so a transfer damaged on the way (seen in practice: a
+        # burst of garbled bytes mid-file, "Completed, Succeeded" in slskd) is only caught
+        # here. A second download is almost always clean: try once before asking.
+        try:
+            refetch(imp)
+        except Blocked as exc:
+            _note(imp, f"Could not download the damaged files again automatically: {exc}")
+        else:
+            raise Refetching()
     if not ok:
         raise JobFailed(f"verification failed: {reason}")
     picks = audio.spectrogram_picks(results, audio.audio_files(root))

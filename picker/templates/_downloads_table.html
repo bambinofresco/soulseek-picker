@@ -38,8 +38,8 @@
     <td class="actions">
       {% set imp = imports.get(d.id) %}
       {% if imp %}
-        <a class="button {{ 'primary' if imp.state in ('review', 'skipped', 'blocked') }}" href="/imports/{{ imp.id }}">
-          {%- if imp.state == "review" %}Review{% elif imp.state == "skipped" %}beets skipped{% elif imp.state == "blocked" %}Needs you{% else %}Import: {{ imp.state }}{% endif -%}
+        <a class="button {{ 'primary' if imp.state in ('review', 'skipped', 'blocked') or (imp.state == 'failed' and imp.step == 'verify') }}" href="/imports/{{ imp.id }}">
+          {%- if imp.state == "review" %}Review{% elif imp.state == "skipped" %}beets skipped{% elif imp.state == "blocked" %}Needs you{% elif imp.state == "refetching" %}Re-downloading damaged files{% elif imp.state == "failed" and imp.step == "verify" %}Check failed: review{% else %}Import: {{ imp.state }}{% endif -%}
         </a>
       {% endif %}
       {% if running %}

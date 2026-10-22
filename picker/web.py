@@ -210,7 +210,7 @@ async def _candidates_context(rg_mbid: str, params: dict, *, with_editions: bool
     active = searching_now or (search is not None and (
         prefetching.active_prefetches(search.id)
         or any(d.state in ACTIVE_DOWNLOAD for d in downloads.values())
-        or any(i.state in ("verifying", "importing") for i in imports.values())
+        or any(i.state in ("verifying", "refetching", "importing") for i in imports.values())
     ))
     if search:
         unfiltered, hidden = ordered_candidates(search, show_all=params["all"])
@@ -371,7 +371,7 @@ def _downloads_context() -> dict:
         ),
         "queue_timeout_hours": get_settings().queue_timeout_hours,
         "active": any(d.state in ACTIVE_DOWNLOAD for d in rows)
-        or any(i.state in ("verifying", "importing") for i in imports.values()),
+        or any(i.state in ("verifying", "refetching", "importing") for i in imports.values()),
     }
 
 
@@ -478,7 +478,7 @@ async def import_page(request: Request, import_id: int, error: str | None = None
     return render(
         request, "import.html", imp=imp, album=album, dl=dl, edition=by_id.get(imp.release_mbid),
         editions=[e for e in editions if e.id in likely] + [e for e in editions if e.id not in likely],
-        likely=set(likely), error=error, active=imp.state in ("verifying", "importing"),
+        likely=set(likely), error=error, active=imp.state in ("verifying", "refetching", "importing"),
     )
 
 
@@ -500,6 +500,8 @@ async def import_action(request: Request, import_id: int, action: str):
             importing.force_apply(imp)
         elif action == "retry":
             importing.retry(imp)
+        elif action == "refetch":
+            importing.refetch(imp)
         elif action == "edition":
             importing.change_edition(imp, str(form.get("release_mbid") or ""))
         elif action == "reject":

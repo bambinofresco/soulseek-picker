@@ -43,15 +43,15 @@ async def check_file(path: Path) -> dict:
     if path.suffix.lower() == ".flac":
         code, out = await run_tool(["flac", "-t", "-s", str(path)])
         if code != 0:
-            return {"name": name, "ok": False, "detail": out.splitlines()[-1] if out else f"flac -t exited {code}"}
+            return {"name": name, "path": str(path), "ok": False, "detail": out.splitlines()[-1] if out else f"flac -t exited {code}"}
     try:
         info = mutagen.File(path)
     except Exception as exc:  # noqa: BLE001 - mutagen raises many types on bad files
-        return {"name": name, "ok": False, "detail": f"unreadable: {exc}"}
+        return {"name": name, "path": str(path), "ok": False, "detail": f"unreadable: {exc}"}
     if info is None:
-        return {"name": name, "ok": False, "detail": "unreadable: unknown format"}
+        return {"name": name, "path": str(path), "ok": False, "detail": "unreadable: unknown format"}
     length = getattr(info.info, "length", None)
-    return {"name": name, "ok": True, "detail": f"{length:.0f} s" if length else "ok", "length": length}
+    return {"name": name, "path": str(path), "ok": True, "detail": f"{length:.0f} s" if length else "ok", "length": length}
 
 
 async def verify(root: Path, expected_count: int) -> tuple[bool, list[dict], str | None]:

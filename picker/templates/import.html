@@ -8,6 +8,7 @@
 </section>
 {% if error %}<p class="banner error">{{ error }}</p>{% endif %}
 {% if imp.error %}<p class="banner {{ 'warn' if imp.state == 'blocked' else 'error' }}">{{ imp.error }}</p>{% endif %}
+{% if imp.state == "refetching" %}<p class="banner warn">Some files failed the integrity check: downloading them again from {{ imp.username }}. This page updates when they arrive.</p>{% endif %}
 {% if active %}<p class="progress-line" hx-get="/imports/{{ imp.id }}" hx-trigger="every 3s" hx-select="main" hx-target="main" hx-swap="outerHTML"><span class="spinner"></span> Working…</p>{% endif %}
 
 <section class="card review">
@@ -36,8 +37,15 @@
       <form method="post" action="/imports/{{ imp.id }}/force"><button class="primary">Force apply</button></form>
       <span class="small muted">Reruns beets with strong_rec_thresh 1.0: it applies the chosen release whatever the distance.</span>
     {% endif %}
-    {% if imp.state in ("blocked", "failed") and imp.step not in ("verify",) %}
+    {% set damaged = (imp.integrity or [])|rejectattr("ok")|list %}
+    {% if imp.state == "failed" and imp.step == "verify" and damaged and not imp.album_dir %}
+      <form method="post" action="/imports/{{ imp.id }}/refetch"><button class="primary">Re-download failed tracks</button></form>
+      <span class="small muted">Deletes the {{ damaged|length }} damaged file{{ "s" if damaged|length != 1 }} and downloads
+        {{ "them" if damaged|length != 1 else "it" }} again from {{ imp.username }}{% if imp.refetches %} (already tried {{ imp.refetches }} time{{ "s" if imp.refetches != 1 }}){% endif %}.</span>
+    {% endif %}
+    {% if imp.state in ("blocked", "failed") %}
       <form method="post" action="/imports/{{ imp.id }}/retry"><button>Retry</button></form>
+      {% if imp.step == "verify" %}<span class="small muted">Checks the folder again, e.g. after you replaced a file by hand.</span>{% endif %}
     {% endif %}
     {% if imp.state in ("review", "skipped", "blocked", "failed") and not imp.album_dir %}
       <form method="post" action="/imports/{{ imp.id }}/reject"><button class="danger">Reject and try the next folder</button></form>

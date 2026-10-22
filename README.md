@@ -104,6 +104,15 @@ The one interaction: slskd refuses to enqueue a file that's already in flight fr
 - **Stall timeout** (default 30 min): counts only once bytes have started flowing and then stop.
 - **Give up and try next candidate**: stops the current folder now and starts the next-best one for the same edition.
 
+**Damaged files.** Soulseek has no file hashes, so a transfer damaged on the way can still finish as "Completed, Succeeded". In one real case, a burst of 44 garbled bytes in the middle of a track got past TCP's checksum somewhere between the uploader and the VPN exit. The import's integrity check (`flac -t`, plus a mutagen read) is what catches this.
+
+When files fail it, the picker deletes the damaged copies and downloads just those files again, once, automatically. It then checks the whole folder again. If they fail a second time, the Review page offers:
+- **Re-download failed tracks**
+- **Retry**, which re-checks the folder, e.g. after you replaced a file by hand
+- **Reject and try the next folder**
+
+Only files inside the download directory's `picker/` folder are ever deleted.
+
 ## Checking the real APIs
 
 The probe runs only read-style calls against slskd, Lidarr and Plex, plus one small Soulseek search that it deletes afterwards. It saves the raw JSON, with keys, tokens and passwords scrubbed, to `/config/probe/<timestamp>/`, then compares it with the fields the code reads:

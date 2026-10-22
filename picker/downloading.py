@@ -200,17 +200,51 @@ async def run_download(job: Job) -> None:
         await _download(job, dl)
     except Exception as exc:
         _save(dl, state="failed", error=str(exc), finished_at=utcnow())
+        if dl.refetch_import_id:
+            from .importing import refetch_failed
+
+            refetch_failed(dl.refetch_import_id, str(exc))
+            _save(dl, refetch_import_id=None)
         raise
 
 
 async def _download(job: Job, dl: Download) -> None:
+    from . import importing  # imported here: importing imports this module
+
     outcome = await _track(job, dl)
+    if dl.refetch_import_id:
+        # Re-downloading files that failed an import's integrity check: hand back to that import.
+        import_id = dl.refetch_import_id
+        _save(dl, refetch_import_id=None)
+        if outcome == "completed":
+            importing.resume_after_refetch(import_id)
+        else:
+            importing.refetch_failed(import_id, dl.error or "the files could not be downloaded again")
+        return
     if outcome != "completed":
         return  # partial: the Downloads page offers retrying the failed files or the next candidate
     _verify(job, dl)
-    from .importing import start_import  # imported here: importing imports this module
+    importing.start_import(dl)
 
-    start_import(dl)
+
+def local_path(dl: Download, remote: dict, settings: Settings) -> Path:
+    """Where a requested file lands: <destination>[/<disc folder>]/<file name> (see disc_batches)."""
+    destination = next(dest for dest, group in disc_batches(dl, [remote]))
+    return settings.download_dir / Path(*destination.split("/")) / split_path(remote["filename"])[-1]
+
+
+def refetch_files(download_id: int, remote_names: list[str], import_id: int) -> Download:
+    """Download these files of a finished download again (their damaged copies already deleted)."""
+    with session() as s:
+        dl = s.get(Download, download_id)
+    states = copy.deepcopy(dl.file_states or {f["filename"]: {"status": DONE, "tries": 0} for f in dl.files})
+    for name in remote_names:
+        states[name].update(status=PENDING, tries=0, not_before=None, failed_seen=None,
+                            error="failed the integrity check")
+    job = worker.enqueue("download", {"download_id": dl.id}, rg_mbid=dl.rg_mbid)
+    _save(dl, file_states=states, state="transferring", error=None, finished_at=None, job_id=job.id,
+          queued_since=utcnow(), last_progress_at=None, refetch_import_id=import_id)
+    return dl
 
 
 def _initial_states(dl: Download, settings: Settings) -> tuple[dict, Window, str | None]:

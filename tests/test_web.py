@@ -292,3 +292,24 @@ def test_downloads_page_explains_progress(client, state, extra, expect):
     assert expect in html
     if state == "partial":
         assert "Try next candidate" in html
+
+
+def test_review_page_offers_redownload_after_a_failed_check(client, with_editions):
+    from picker.models import Download, Import
+    seed()
+    with session() as s:
+        dl = Download(candidate_id=1, search_id=1, rg_mbid="rg-1", username="jamjam", folder="m", destination="picker/32", files=[])
+        s.add(dl)
+        s.commit()
+        s.refresh(dl)
+        imp = Import(download_id=dl.id, rg_mbid="rg-1", release_mbid="jp-cd", username="jamjam", state="failed", step="verify",
+                     refetches=1, error="verification failed: 1 file(s) failed the integrity check",
+                     integrity=[{"name": "03.flac", "path": "/x/03.flac", "ok": False, "detail": "state = FLAC__STREAM_DECODER_ABORTED"},
+                                {"name": "01.flac", "path": "/x/01.flac", "ok": True, "detail": "300 s"}])
+        s.add(imp)
+        s.commit()
+        s.refresh(imp)
+    html = client.get(f"/imports/{imp.id}").text
+    assert "Re-download failed tracks" in html and "already tried 1 time" in html
+    assert f'action="/imports/{imp.id}/retry"' in html and "Checks the folder again" in html
+    assert "Check failed: review" in client.get("/downloads").text
