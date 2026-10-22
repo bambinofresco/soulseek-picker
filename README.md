@@ -56,8 +56,15 @@ API keys and passwords can go in the template or on the Settings page. A value s
 - An API key for the picker.
 - `remote_file_management: true` is fine; see [Coexisting with Lidarr's slskd plugin](#coexisting-with-lidarrs-slskd-plugin).
 
+**autoscan** (optional, recommended if you use it)
+- Set the **autoscan** card on the Settings page (or the template's `AUTOSCAN_*` variables): URL `http://UNRAID_IP:3030`, plus the username and password from autoscan's `authentication:` block. autoscan's config needs the `manual` trigger, which a basic config has.
+- After each import, and each retag of a Lidarr grab, the picker posts the album folder to `/triggers/manual?dir=…`. autoscan then queues it, applies `minimum-age` and the anchor check, and scans Plex as usual.
+- **Why bother when autoscan watches with inotify:** the picker puts an album in place by *moving* the downloaded folder in one rename. A watcher sees one event for the folder and none per file, unlike a copy, which writes every file. If the artist folder was created a moment earlier, the watch on it may not exist yet. Lidarr's autoscan trigger doesn't help either: it fires only for Lidarr's own imports.
+- autoscan must see the library at the same path as the picker (`/mediadata/media/music`).
+- The Settings **Test** button checks the URL and login without queueing anything.
+
 **Plex**
-- No special settings. The partial scan uses `/mediadata/media/music/<artist>/<album>`, the path Plex already sees, so `PLEX_MUSIC_PATH` stays empty.
+- No special settings, and no token needed if autoscan does the scanning. If you do give the picker a Plex token and section ID, it also asks Plex directly for a partial scan of `/mediadata/media/music/<artist>/<album>`, the path Plex already sees, so `PLEX_MUSIC_PATH` stays empty.
 
 ## Album folder names
 

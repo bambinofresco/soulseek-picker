@@ -530,6 +530,7 @@ FORM_SECTIONS = {
     "slskd": ["slskd_url", "slskd_api_key"],
     "Lidarr": ["lidarr_url", "lidarr_api_key", "webhook_username", "webhook_password"],
     "Plex": ["plex_url", "plex_token", "plex_section_id", "plex_music_path"],
+    "autoscan": ["autoscan_url", "autoscan_username", "autoscan_password"],
     "MusicBrainz": ["mb_contact"],
     "Search": ["search_timeout", "search_response_limit", "search_file_limit", "min_flac_folders"],
     "Preferences": [
@@ -542,7 +543,7 @@ FORM_SECTIONS = {
     ],
     "Import": ["album_folder_template", "beets_timeout_minutes"],
 }
-SECTION_SERVICE = {"slskd": "slskd", "Lidarr": "lidarr", "Plex": "plex", "MusicBrainz": "musicbrainz"}
+SECTION_SERVICE = {"slskd": "slskd", "Lidarr": "lidarr", "Plex": "plex", "autoscan": "autoscan", "MusicBrainz": "musicbrainz"}
 
 
 def _field_type(name: str) -> str:

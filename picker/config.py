@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, field_validator
 
-SECRET_FIELDS = {"slskd_api_key", "lidarr_api_key", "plex_token", "webhook_password"}
+SECRET_FIELDS = {"slskd_api_key", "lidarr_api_key", "plex_token", "webhook_password", "autoscan_password"}
 
 
 class Settings(BaseModel):
@@ -32,6 +32,10 @@ class Settings(BaseModel):
     plex_section_id: str = ""
     # The library root as Plex sees it. Empty means the same path as music_dir.
     plex_music_path: str = ""
+    # autoscan's manual trigger: the picker asks it to scan each imported folder. Empty: off.
+    autoscan_url: str = ""  # e.g. http://192.168.1.10:3030
+    autoscan_username: str = ""
+    autoscan_password: str = ""
     mb_contact: str = ""
 
     # Lidarr defaults for adding an artist

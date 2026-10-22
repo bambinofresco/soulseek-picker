@@ -23,6 +23,9 @@ services:
       PLEX_URL: http://UNRAID_IP:32400
       PLEX_TOKEN: change-me
       PLEX_SECTION_ID: "1"
+      AUTOSCAN_URL: http://UNRAID_IP:3030    # optional: ask autoscan to scan each imported folder
+      AUTOSCAN_USERNAME: admin
+      AUTOSCAN_PASSWORD: change-me
       MB_CONTACT: you@example.com
       DOWNLOAD_DIR: /mediadata/soulseek/complete
       MUSIC_DIR: /mediadata/media/music

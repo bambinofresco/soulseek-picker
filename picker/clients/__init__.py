@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from ..config import Settings, get_settings
+from .autoscan import AutoscanClient
 from .lidarr import LidarrClient
 from .musicbrainz import MusicBrainzClient
 from .plex import PlexClient
@@ -17,9 +18,10 @@ class Services:
         self.mb = MusicBrainzClient(settings.mb_contact)
         self.lidarr = LidarrClient(settings.lidarr_url, settings.lidarr_api_key)
         self.plex = PlexClient(settings.plex_url, settings.plex_token, settings.plex_section_id)
+        self.autoscan = AutoscanClient(settings.autoscan_url, settings.autoscan_username, settings.autoscan_password)
 
     async def aclose(self) -> None:
-        for client in (self.slskd, self.mb, self.lidarr, self.plex):
+        for client in (self.slskd, self.mb, self.lidarr, self.plex, self.autoscan):
             await client.aclose()
 
 

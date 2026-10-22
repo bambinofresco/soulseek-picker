@@ -398,3 +398,42 @@ async def test_completed_refetch_resumes_the_import_instead_of_starting_a_new_on
     with session() as s:
         assert len(s.exec(select(Import)).all()) == 1  # no second import
     assert _reload(imp).state == "verifying"
+
+
+class FakeAutoscan:
+    def __init__(self, fail=False):
+        self.scanned, self.fail = [], fail
+
+    async def scan(self, folder):
+        if self.fail:
+            from picker.clients.http import ServiceError
+            raise ServiceError("autoscan", "HTTP 401: check the autoscan username and password", 401)
+        self.scanned.append(folder)
+
+
+@pytest.mark.parametrize("fail", [False, True])
+async def test_imports_ask_autoscan_for_the_album_folder(env, monkeypatch, fail):
+    settings, lidarr, plex = env
+    settings.autoscan_url = "http://autoscan:3030"
+    autoscan = FakeAutoscan(fail)
+    services = FakeServices(lidarr, plex)
+    services.autoscan = autoscan
+    monkeypatch.setattr(importing, "services", lambda: services)
+    imp = await run(importing.start_import(landed_download(settings, job_id=30)))
+    imp = await run(importing.approve(imp))
+    assert imp.state == "imported"  # a scanner failing never undoes the import
+    target = settings.music_dir / "Radiohead" / "OK Computer (1997)"
+    if fail:
+        assert autoscan.scanned == [] and any("autoscan scan request failed" in n for n in imp.notes)
+    else:
+        assert autoscan.scanned == [target.as_posix()]
+    assert len(plex.scanned) == 1  # Plex, configured too, still gets its direct scan
+
+
+async def test_without_scanners_the_import_says_so(env):
+    settings, *_ = env
+    settings.plex_token = ""
+    imp = await run(importing.start_import(landed_download(settings, job_id=31)))
+    imp = await run(importing.approve(imp))
+    assert imp.state == "imported"
+    assert any("Neither autoscan nor Plex is configured" in n for n in imp.notes)

@@ -434,13 +434,29 @@ def plex_path(album_dir: Path, settings: Settings) -> str:
 
 
 async def _scan_plex(imp: Import, settings: Settings) -> None:
-    if not settings.plex_token or not settings.plex_section_id:
-        _note(imp, "Plex is not configured; no library scan")
-        return
-    try:
-        await services().plex.scan_path(plex_path(Path(imp.album_dir), settings))
-    except ServiceError as exc:
-        _note(imp, f"Plex scan failed: {exc.message}")  # the import itself stands
+    """Tell the library scanners about the new or retagged folder.
+
+    autoscan (when configured) gets the exact folder through its manual trigger: an
+    inotify watcher can miss a folder moved into place in one rename. Plex (when
+    configured) gets a partial scan directly. Neither failing undoes the import.
+    """
+    album_dir = Path(imp.album_dir)
+    asked = False
+    if settings.autoscan_url:
+        asked = True
+        try:
+            await services().autoscan.scan(album_dir.as_posix())
+            log_event(imp.job_id, imp.rg_mbid, f"Asked autoscan to scan {album_dir}")
+        except ServiceError as exc:
+            _note(imp, f"autoscan scan request failed: {exc.message}")
+    if settings.plex_token and settings.plex_section_id:
+        asked = True
+        try:
+            await services().plex.scan_path(plex_path(album_dir, settings))
+        except ServiceError as exc:
+            _note(imp, f"Plex scan failed: {exc.message}")
+    if not asked:
+        _note(imp, "Neither autoscan nor Plex is configured; the library scan is left to Plex's own watcher")
 
 
 def imports_for(download_ids: list[int]) -> dict[int, Import]:

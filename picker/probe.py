@@ -132,6 +132,7 @@ class Prober:
             ("slskd", self.slskd, bool(self.settings.slskd_url and self.settings.slskd_api_key)),
             ("lidarr", self.lidarr, bool(self.settings.lidarr_url and self.settings.lidarr_api_key)),
             ("plex", self.plex, bool(self.settings.plex_url and self.settings.plex_token)),
+            ("autoscan", self.autoscan, bool(self.settings.autoscan_url)),
         ):
             if not configured:
                 self.report.add("warn", area, "not configured; skipped")
@@ -340,6 +341,18 @@ class Prober:
         plex_root = (s.plex_music_path or s.music_dir.as_posix()).rstrip("/")
         r.add("ok" if plex_root in locations else "mismatch", a,
               f"Plex library folders {locations}; partial scans will use {plex_root}/<artist>/<album>")
+
+    # autoscan ---------------------------------------------------------------------------
+
+    async def autoscan(self) -> None:
+        try:
+            status = await services().autoscan.check()
+        except ServiceError as exc:
+            self.report.add("error", "autoscan", exc.message)
+            return
+        self.report.add("ok", "autoscan", f"manual trigger reachable with these credentials (HTTP {status} without a folder; nothing queued)")
+        self.report.add("ok", "autoscan", f"imports will ask for folders under {self.settings.music_dir.as_posix()}; "
+                                          "autoscan must see the library at that same path")
 
     # Webhooks ---------------------------------------------------------------------------
 

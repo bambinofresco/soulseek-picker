@@ -94,10 +94,18 @@ async def _test_musicbrainz(settings: Settings) -> TestResult:
     return TestResult(bool(groups), "Search works" if groups else "Search returned nothing")
 
 
+async def _test_autoscan(settings: Settings) -> TestResult:
+    if not settings.autoscan_url:
+        return TestResult(False, "No URL set (leave it empty to skip autoscan)")
+    status = await services().autoscan.check()
+    return TestResult(True, f"autoscan's manual trigger answered (HTTP {status}, nothing queued); imports will ask it to scan their folder")
+
+
 _TESTS = {
     "slskd": _test_slskd,
     "lidarr": _test_lidarr,
     "plex": _test_plex,
+    "autoscan": _test_autoscan,
     "musicbrainz": _test_musicbrainz,
 }
 SERVICES = list(_TESTS)

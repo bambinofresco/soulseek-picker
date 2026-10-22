@@ -40,6 +40,10 @@
   <Config Name="Plex music section ID" Target="PLEX_SECTION_ID" Default="" Mode="" Description="The music library's section ID (the probe lists them)." Type="Variable" Display="always" Required="false" Mask="false"/>
   <Config Name="Plex library path" Target="PLEX_MUSIC_PATH" Default="" Mode="" Description="Only if Plex sees the library under a different path. Empty: Plex uses /mediadata/media/music too." Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
+  <Config Name="autoscan URL" Target="AUTOSCAN_URL" Default="" Mode="" Description="Optional. autoscan's address, e.g. http://UNRAID_IP:3030. After each import the picker asks autoscan to scan the album folder (an inotify watcher can miss a folder moved into place in one rename). Empty: off." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="autoscan username" Target="AUTOSCAN_USERNAME" Default="" Mode="" Description="autoscan's authentication username, if it has one." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="autoscan password" Target="AUTOSCAN_PASSWORD" Default="" Mode="" Description="autoscan's authentication password." Type="Variable" Display="always" Required="false" Mask="true"/>
+
   <Config Name="MusicBrainz contact" Target="MB_CONTACT" Default="" Mode="" Description="An email address or URL sent in the MusicBrainz User-Agent, as MusicBrainz asks." Type="Variable" Display="always" Required="false" Mask="false"/>
 
   <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User files are written as (nobody)." Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
