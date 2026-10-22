@@ -21,6 +21,9 @@ def path_warnings(settings: Settings) -> list[str]:
             warnings.append(f"{label} {path} does not exist inside the container")
         elif not os.access(path, os.W_OK):
             warnings.append(f"{label} {path} is not writable by this user (check PUID/PGID)")
+    for label, url in (("slskd", settings.slskd_url), ("Lidarr", settings.lidarr_url)):
+        if not url or "UNRAID_IP" in url.upper():
+            warnings.append(f"Set the {label} URL to http://<server LAN IP>:<port> (container names don't resolve on the bridge network)")
     return warnings
 
 

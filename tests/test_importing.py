@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from mutagen.flac import FLAC
 
-from picker import audio, beets, importing
+from picker import albums, audio, beets, importing
 from picker.db import session
 from picker.models import Album, Download, Import, Job
 
@@ -51,7 +51,8 @@ class FakeLidarr:
         return {"status": "completed"}
 
     async def album_by_foreign_id(self, rg):
-        return {"id": 9, "foreignAlbumId": rg, "releases": self.releases}
+        return {"id": 9, "foreignAlbumId": rg, "title": "OK Computer", "releaseDate": "1997-05-21T00:00:00Z",
+                "releases": self.releases}
 
     async def update_album(self, album):
         self.updated = album
@@ -83,6 +84,13 @@ def env(settings, monkeypatch):
     settings.beets_pretend = True
     lidarr, plex = FakeLidarr(settings.music_dir), FakePlex()
     monkeypatch.setattr(importing, "services", lambda: FakeServices(lidarr, plex))
+
+    async def fake_editions(rg):
+        return [{"id": REL, "title": "OK Computer", "date": "1997-07-01", "country": "US",
+                 "label-info": [{"label": {"name": "Capitol Records"}, "catalog-number": "CDP 7243 8 55229 2 5"}],
+                 "media": [{"position": 1, "format": "CD", "tracks": [{"length": 1}] * 3}]}]
+
+    monkeypatch.setattr(albums, "editions", fake_editions)
 
     def enqueue(kind, payload, rg_mbid=None):
         with session() as s:
@@ -155,11 +163,13 @@ async def test_full_pipeline_with_beets_pretend(env):
 
     # beets ran for real, in pretend mode, on the placed folder
     assert "01 Track.flac" in imp.beets_output
+    # The tag snapshot shown on the review page and in History reads the files on disk.
+    assert imp.tags["file"] == "01 Track.flac" and imp.tags["tags"]["album"] == "OK Computer"
     assert (settings.beets_dir / "config.yaml").read_text().startswith(f"directory: {settings.music_dir.as_posix()}")
 
     # Lidarr: artist added without a back-catalogue search, edition selected, folder rescanned
     assert lidarr.added["monitor"] == "none" and lidarr.added["monitor_new_items"] == "new"
-    assert lidarr.commands[0] == ("RefreshArtist", {"artistId": 5})
+    assert lidarr.commands[0] == ("RefreshArtist", {"artistIds": [5]})
     assert [r["foreignReleaseId"] for r in lidarr.updated["releases"] if r["monitored"]] == [REL]
     assert lidarr.commands[-1] == ("RescanFolders", {"folders": [str(target.parent)], "filter": "matched"})
 
@@ -265,12 +275,21 @@ async def test_auto_import_runs_straight_through(env):
 
 
 def test_names_and_paths(settings):
-    album = Album(rg_mbid="x", artist="AC/DC", title="Who Made Who: Live?", first_release_date="1986")
-    assert importing.album_folder_name("{album} ({year})", album) == "Who Made Who - Live (1986)"
-    undated = Album(rg_mbid="y", artist="A", title="B", first_release_date=None)
-    assert importing.album_folder_name("{album} ({year})", undated) == "B"
     assert importing.safe_name("AC/DC") == "AC+DC"
+    assert importing.safe_name("...") == "Unknown"
+    # Plex sees the library at the same path: no prefix configured means an identity mapping.
     settings.plex_music_path = ""
-    assert importing.plex_path(settings.music_dir / "A" / "B", settings).endswith("/music/A/B")
+    album_dir = settings.music_dir / "Radiohead" / "OK Computer (1997)"
+    assert importing.plex_path(album_dir, settings) == f"{settings.music_dir.resolve().as_posix()}/Radiohead/OK Computer (1997)"
+    settings.plex_music_path = "/data/music"
+    assert importing.plex_path(album_dir, settings) == "/data/music/Radiohead/OK Computer (1997)"
     assert importing.within(settings.music_dir / "A", settings.music_dir)
     assert not importing.within(settings.download_dir, settings.music_dir)
+
+
+async def test_folder_template_extras_come_from_the_chosen_edition(env):
+    settings, *_ = env
+    settings.album_folder_template = "{Album Title} ({Release Year}){ [Catalog Number]}"
+    imp = await run(importing.start_import(landed_download(settings, job_id=13)))
+    imp = await run(importing.approve(imp))
+    assert Path(imp.album_dir).name == "OK Computer (1997) [CDP 7243 8 55229 2 5]"

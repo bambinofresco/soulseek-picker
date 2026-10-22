@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>soulseek-picker</Name>
+  <Repository>ghcr.io/bambinofresco/soulseek-picker:latest</Repository>
+  <Registry>https://github.com/bambinofresco/soulseek-picker/pkgs/container/soulseek-picker</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/bambinofresco/soulseek-picker/issues</Support>
+  <Project>https://github.com/bambinofresco/soulseek-picker</Project>
+  <Overview>Hand-pick the exact edition of an album from Soulseek. beets tags it to that edition in place; Lidarr is told which edition it is and Plex rescans the folder. Replace UNRAID_IP in the URLs below with this server's LAN IP: on the bridge network container names don't resolve.</Overview>
+  <Category>MediaApp:Music Downloaders:</Category>
+  <WebUI>http://[IP]:[PORT:8765]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/bambinofresco/soulseek-picker/main/unraid/picker.xml</TemplateURL>
+  <Icon/>
+  <ExtraParams/>
+  <PostArgs/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>slskd 0.26 or newer (reached through Gluetun) and Lidarr. Lidarr: Write Audio Tags = Never; a Webhook connection to http://UNRAID_IP:8765/hooks/lidarr on Release Import and Upgrade.</Requires>
+
+  <Config Name="Web UI" Target="8765" Default="8765" Mode="tcp" Description="The picker's web page and Lidarr's webhook target." Type="Port" Display="always" Required="true" Mask="false">8765</Config>
+  <Config Name="Media data" Target="/mediadata" Default="/mnt/user/mediadata" Mode="rw" Description="One share holding slskd's downloads and the music library, mapped exactly as in slskd and Lidarr (/mnt/user/mediadata -&gt; /mediadata)." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/mediadata</Config>
+  <Config Name="Appdata" Target="/config" Default="/mnt/user/appdata/picker" Mode="rw" Description="Database, settings, beets config and library, spectrograms, probe output." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/picker</Config>
+
+  <Config Name="slskd URL" Target="SLSKD_URL" Default="http://UNRAID_IP:5030" Mode="" Description="slskd shares Gluetun's network; port 5030 is published on Gluetun." Type="Variable" Display="always" Required="true" Mask="false">http://UNRAID_IP:5030</Config>
+  <Config Name="slskd API key" Target="SLSKD_API_KEY" Default="" Mode="" Description="An slskd API key (web.authentication.api_keys). Leave empty to enter it on the Settings page instead." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="slskd download dir" Target="DOWNLOAD_DIR" Default="/mediadata/soulseek/complete" Mode="" Description="slskd's download directory, as seen inside this container. Must equal slskd's own setting." Type="Variable" Display="advanced" Required="true" Mask="false">/mediadata/soulseek/complete</Config>
+  <Config Name="Music library" Target="MUSIC_DIR" Default="/mediadata/media/music" Mode="" Description="The library root, same path as in Lidarr." Type="Variable" Display="advanced" Required="true" Mask="false">/mediadata/media/music</Config>
+
+  <Config Name="Lidarr URL" Target="LIDARR_URL" Default="http://UNRAID_IP:8686" Mode="" Description="Lidarr, by the server's LAN IP." Type="Variable" Display="always" Required="true" Mask="false">http://UNRAID_IP:8686</Config>
+  <Config Name="Lidarr API key" Target="LIDARR_API_KEY" Default="" Mode="" Description="Lidarr: Settings, General, API Key. Leave empty to enter it on the Settings page instead." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Lidarr root folder" Target="LIDARR_ROOT_FOLDER" Default="/mediadata/media/music" Mode="" Description="Root folder used when the picker adds an artist to Lidarr." Type="Variable" Display="advanced" Required="false" Mask="false">/mediadata/media/music</Config>
+  <Config Name="Webhook username" Target="WEBHOOK_USERNAME" Default="lidarr" Mode="" Description="Username in Lidarr's Webhook connection to /hooks/lidarr." Type="Variable" Display="always" Required="false" Mask="false">lidarr</Config>
+  <Config Name="Webhook password" Target="WEBHOOK_PASSWORD" Default="" Mode="" Description="Password in Lidarr's Webhook connection. The webhook is refused until this is set." Type="Variable" Display="always" Required="false" Mask="true"/>
+
+  <Config Name="Plex URL" Target="PLEX_URL" Default="http://UNRAID_IP:32400" Mode="" Description="Plex Media Server, by the server's LAN IP." Type="Variable" Display="always" Required="false" Mask="false">http://UNRAID_IP:32400</Config>
+  <Config Name="Plex token" Target="PLEX_TOKEN" Default="" Mode="" Description="X-Plex-Token. Leave empty to enter it on the Settings page instead." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Plex music section ID" Target="PLEX_SECTION_ID" Default="" Mode="" Description="The music library's section ID (the probe lists them)." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="Plex library path" Target="PLEX_MUSIC_PATH" Default="" Mode="" Description="Only if Plex sees the library under a different path. Empty: Plex uses /mediadata/media/music too." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
+  <Config Name="MusicBrainz contact" Target="MB_CONTACT" Default="" Mode="" Description="An email address or URL sent in the MusicBrainz User-Agent, as MusicBrainz asks." Type="Variable" Display="always" Required="false" Mask="false"/>
+
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User files are written as (nobody)." Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group files are written as (users)." Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
+  <Config Name="UMASK" Target="UMASK" Default="002" Mode="" Description="" Type="Variable" Display="advanced" Required="false" Mask="false">002</Config>
+</Container>

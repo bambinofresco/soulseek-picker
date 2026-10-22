@@ -1,0 +1,16 @@
+{#- The edition tags beets wrote, from imp.tags (audio.tag_snapshot). -#}
+{% if imp.tags %}
+  {% set t = imp.tags.tags or {} %}
+  {% set match = imp.release_mbid and t.get("musicbrainz_albumid") == imp.release_mbid %}
+  <p class="small">
+    {% if match %}<span class="badge ok">tags match the chosen edition</span>
+    {% elif t %}<span class="badge warn">release ID in the tags is not the chosen edition</span>{% endif %}
+    {% if imp.tags.file %}<span class="muted mono">{{ imp.tags.file }}</span>{% endif %}
+    {% if imp.tags.error %}<span class="error-text">{{ imp.tags.error }}</span>{% endif %}
+  </p>
+  {% if t %}
+  <table class="grid small tags">
+    {% for key, value in t.items() %}<tr><td class="mono muted">{{ key|upper }}</td><td>{{ value }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+{% endif %}

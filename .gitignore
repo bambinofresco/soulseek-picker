@@ -1,5 +1,33 @@
+# Python
 .venv/
+venv/
 __pycache__/
-.pytest_cache/
+*.py[cod]
 *.egg-info/
+build/
+dist/
+
+# Tests and tooling
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# Local state and secrets
+.env
+.env.*
 *.db
+*.db-wal
+*.db-shm
+dev/
+config/
+picker.yaml
+probe/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

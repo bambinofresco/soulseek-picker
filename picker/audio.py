@@ -68,6 +68,33 @@ async def verify(root: Path, expected_count: int) -> tuple[bool, list[dict], str
     return True, results, None
 
 
+EDITION_TAGS = [
+    "album", "albumartist", "date", "originaldate", "label", "catalognumber", "releasecountry", "media",
+    "barcode", "releasestatus", "musicbrainz_albumid", "musicbrainz_releasegroupid", "musicbrainz_albumcomment",
+]
+
+
+def tag_snapshot(album_dir: Path) -> dict:
+    """The edition tags of the first track, as written to disk (Vorbis comment names).
+
+    Shown on the review page and in History, to check beets wrote the chosen edition.
+    """
+    files = audio_files(album_dir)
+    if not files:
+        return {"file": None, "tags": {}, "error": f"no audio files in {album_dir}"}
+    try:
+        info = mutagen.File(files[0], easy=False)
+    except Exception as exc:  # noqa: BLE001 - mutagen raises many types on bad files
+        return {"file": files[0].name, "tags": {}, "error": str(exc)}
+    tags = {}
+    raw = getattr(info, "tags", None) or {}
+    for key in EDITION_TAGS:
+        values = raw.get(key) or raw.get(key.upper())
+        if values:
+            tags[key] = "; ".join(str(v) for v in (values if isinstance(values, list) else [values]))
+    return {"file": str(files[0].relative_to(album_dir)), "tags": tags, "error": None}
+
+
 def spectrogram_picks(results: list[dict], files: list[Path]) -> list[Path]:
     """The longest track and one from the middle."""
     if not files:

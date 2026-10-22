@@ -23,11 +23,10 @@ from .clients.http import ServiceError
 from .clients.slskd import transfer_failed, transfer_succeeded
 from .config import get_settings
 from .db import cache_get, cache_put, session
-from .downloading import latest_transfers
-from .grouping import split_path
+from .downloading import destination_for, disc_batches, latest_transfers
 from .jobs import JobFailed, handler, log_event, worker
 from .matching import match_candidate
-from .models import Candidate, Job, Search, utcnow
+from .models import Candidate, Download, Job, Search, utcnow
 from .riplog import parse_cue, parse_log
 
 MAX_USERS = 5  # prefetch from at most this many users at a time
@@ -44,7 +43,8 @@ def cache_key(c: Candidate) -> str:
 
 
 def sidecar_files(c: Candidate) -> list[dict]:
-    return [{"filename": f["filename"], "size": f["size"]} for f in c.files if f["kind"] in ("log", "cue")]
+    return [{"filename": f["filename"], "size": f["size"], "disc": f.get("disc")}
+            for f in c.files if f["kind"] in ("log", "cue")]
 
 
 def start_prefetch(c: Candidate, rg_mbid: str) -> None:
@@ -96,10 +96,14 @@ async def _fetch_and_read(job: Job, c: Candidate) -> dict:
     settings = get_settings()
     slskd = services().slskd
     files = sidecar_files(c)
-    destination = f"picker/prefetch/{c.id}"
+    destination = destination_for("prefetch", str(c.id))
     started = utcnow()
-    if await slskd.enqueue_batch(c.username, files, destination) is None:
-        raise JobFailed("log prefetch needs slskd 0.26 or newer (the batch download API)")
+    # One batch per disc folder, so CD1/rip.log and CD2/rip.log don't collide.
+    batches = disc_batches(Download(candidate_id=c.id, search_id=c.search_id, rg_mbid="", username=c.username,
+                                    folder=c.folder, destination=destination, files=files))
+    for dest, group in batches:
+        if await slskd.enqueue_batch(c.username, group, dest) is None:
+            raise JobFailed("log prefetch needs slskd 0.26 or newer (the batch download API)")
 
     wanted = {f["filename"] for f in files}
     deadline = time.monotonic() + FETCH_TIMEOUT
@@ -117,20 +121,18 @@ async def _fetch_and_read(job: Job, c: Candidate) -> dict:
 
     root = settings.download_dir / Path(*destination.split("/"))
     try:
-        return await read_sidecars(root, [split_path(t["filename"])[-1] for t in done], c)
+        return await read_sidecars(root)
     finally:
         if root.is_dir():
             shutil.rmtree(root, ignore_errors=True)
 
 
-async def read_sidecars(root: Path, names: list[str], c: Candidate) -> dict:
+async def read_sidecars(root: Path) -> dict:
     """Parse every fetched log and cue under root and look the disc IDs up."""
-    found = {p.name: p for p in root.rglob("*") if p.is_file()} if root.is_dir() else {}
+    found = sorted(p for p in root.rglob("*") if p.is_file()) if root.is_dir() else []
     logs, cues = [], []
-    for name in names:
-        path = found.get(name)
-        if path is None:
-            continue
+    for path in found:
+        name = path.relative_to(root).as_posix()
         if path.suffix.lower() == ".log":
             logs.append({"name": name, **parse_log(path.read_bytes()).to_dict()})
         elif path.suffix.lower() == ".cue":

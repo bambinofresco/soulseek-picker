@@ -35,11 +35,16 @@ class FakeSlskd:
         pass
 
     async def enqueue_batch(self, username, files, destination):
+        # slskd 0.26.1 replies {batch: {id, ...}, failures: [...]}; the client adds _status/_batch_id.
         self.enqueued.append((username, files, destination))
-        return {"id": "batch-1", "_status": 201}
+        return {"batch": {"id": f"batch-{len(self.enqueued)}"}, "failures": [], "_status": 201,
+                "_batch_id": f"batch-{len(self.enqueued)}"}
 
     async def user_downloads(self, username):
         return self.transfers
+
+    async def queue_position(self, username, transfer_id):
+        return 42
 
     async def cancel_download(self, username, transfer_id):
         self.cancelled.append(transfer_id)
@@ -244,21 +249,108 @@ async def test_download_failure_cancels_the_rest(settings, monkeypatch):
         assert s.get(Download, dl.id).state == "failed"
 
 
-async def test_download_stall_times_out(settings, monkeypatch):
+def _started(settings, monkeypatch, fake):
     c = make_candidate(settings)
-    fake = FakeSlskd({})
     monkeypatch.setattr(downloading, "services", lambda: FakeServices(fake))
     monkeypatch.setattr(downloading, "worker", type("W", (), {"enqueue": staticmethod(lambda *a, **k: run_job(a[0], a[1]))})())
+    monkeypatch.setattr(downloading, "POLL_INTERVAL", 0)
     dl = downloading.start_download(c, "rg-1")
-    # Already enqueued long ago, nothing moving since.
-    downloading._save(dl, state="enqueued", last_progress_at=utcnow() - timedelta(hours=1))
-    fake.transfers = [transfer(r"m\Album\01.flac", "Queued, Remotely", 0, "t1")]
     with session() as s:
-        job = s.get(Job, dl.job_id)
-    with pytest.raises(JobFailed, match="no progress"):
+        return dl, s.get(Job, dl.job_id)
+
+
+async def test_long_queue_wait_is_not_a_stall(settings, monkeypatch):
+    """An hour in the uploader's queue, well past the 30 min stall limit, is fine under the 6 h queue limit."""
+    fake = FakeSlskd({})
+    dl, job = _started(settings, monkeypatch, fake)
+    downloading._save(dl, state="enqueued", queued_since=utcnow() - timedelta(hours=1))
+    fake.transfers = [transfer(r"m\Album\01.flac", "Queued, Remotely", 0, "t1")]
+    polls = 0
+
+    async def user_downloads(username):
+        nonlocal polls
+        polls += 1
+        if polls == 3:  # the uploader finally sends everything
+            return [transfer(rf"m\Album\{n}", "Completed, Succeeded", 0, f"t{n}") for n in ("01.flac", "02.flac", "rip.log")]
+        return fake.transfers
+
+    fake.user_downloads = user_downloads
+    await downloading.run_download(job)
+    with session() as s:
+        assert s.get(Download, dl.id).state == "completed"
+
+
+async def test_queue_timeout_gives_up_and_shows_position(settings, monkeypatch):
+    fake = FakeSlskd({})
+    dl, job = _started(settings, monkeypatch, fake)
+    downloading._save(dl, state="enqueued", queued_since=utcnow() - timedelta(hours=7))
+    fake.transfers = [transfer(r"m\Album\01.flac", "Queued, Remotely", 0, "t1")]
+    with pytest.raises(JobFailed, match=r"waited 6 h in alice's upload queue \(position 42\)"):
         await downloading.run_download(job)
-    assert fake.enqueued == []  # resumed job does not enqueue twice
+    assert fake.enqueued == []  # a resumed job does not enqueue twice
     assert fake.cancelled == ["t1"]
+
+
+async def test_stall_counts_only_once_bytes_flow(settings, monkeypatch):
+    fake = FakeSlskd({})
+    dl, job = _started(settings, monkeypatch, fake)
+    downloading._save(dl, state="transferring", bytes_done=5, last_progress_at=utcnow() - timedelta(minutes=31))
+    fake.transfers = [transfer(r"m\Album\01.flac", "InProgress", 5, "t1")]
+    with pytest.raises(JobFailed, match="bytes stopped flowing for 30 minutes"):
+        await downloading.run_download(job)
+
+
+async def test_give_up_stops_the_job(settings, monkeypatch):
+    fake = FakeSlskd({})
+    dl, job = _started(settings, monkeypatch, fake)
+    downloading._save(dl, state="enqueued", queued_since=utcnow())
+    fake.transfers = [transfer(r"m\Album\01.flac", "Queued, Remotely", 0, "t1")]
+    downloading.request_give_up(dl.id)
+    with pytest.raises(JobFailed, match="gave up"):
+        await downloading.run_download(job)
+    assert fake.cancelled == ["t1"]
+    with session() as s:
+        assert s.get(Download, dl.id).state == "failed"
+
+
+def test_check_timeouts_phases(settings):
+    now = utcnow()
+    dl = Download(candidate_id=1, search_id=1, rg_mbid="r", username="u", folder="f", destination="d",
+                  queued_since=now - timedelta(hours=5))
+    clocks, why = downloading.check_timeouts(dl, "queued", False, now, settings)
+    assert why is None and clocks["queued_since"] == dl.queued_since
+    clocks, why = downloading.check_timeouts(dl, "active", False, now, settings)
+    assert why is None and clocks["queued_since"] is None and clocks["last_progress_at"] == now  # first bytes
+
+
+def test_transfer_phase():
+    assert downloading.transfer_phase({"a": {"state": "Queued, Remotely"}, "b": {"state": "Completed, Succeeded"}}) == "queued"
+    assert downloading.transfer_phase({"a": {"state": "Initializing"}, "b": {"state": "Queued, Remotely"}}) == "active"
+    assert downloading.transfer_phase({}) == "waiting"
+
+
+def test_one_batch_per_disc_folder(settings):
+    dl = Download(candidate_id=1, search_id=1, rg_mbid="r", username="u", folder="f", destination="picker/7", files=[
+        {"filename": r"f\CD1\01.flac", "size": 1, "disc": "CD1"},
+        {"filename": r"f\CD2\01.flac", "size": 1, "disc": "CD2"},
+        {"filename": r"f\folder.jpg", "size": 1, "disc": None},
+    ])
+    assert [(d, len(fs)) for d, fs in downloading.disc_batches(dl)] == [
+        ("picker/7", 1), ("picker/7/CD1", 1), ("picker/7/CD2", 1),
+    ]
+
+
+def test_destinations_never_enter_lidarrs_folder():
+    """Lidarr's slskd plugin claims and deletes batches under lidarr/; picker batches live under picker/."""
+    assert downloading.destination_for("12") == "picker/12"
+    assert downloading.destination_for("prefetch", "3") == "picker/prefetch/3"
+    old = downloading.DESTINATION_ROOT
+    try:
+        downloading.DESTINATION_ROOT = "Lidarr"
+        with pytest.raises(ValueError, match="lidarr"):
+            downloading.destination_for("1")
+    finally:
+        downloading.DESTINATION_ROOT = old
 
 
 def test_transfer_states():

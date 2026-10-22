@@ -73,6 +73,13 @@
 
 {% if imp.album_dir %}<p class="mono small">In the library at {{ imp.album_dir }}</p>{% endif %}
 
+{% if imp.tags %}
+<section>
+  <h2>Tags written</h2>
+  {% include "_tags.html" %}
+</section>
+{% endif %}
+
 {% if imp.beets_output %}
 <section>
   <details {% if imp.state == "skipped" %}open{% endif %}><summary>beets output</summary><pre class="output">{{ imp.beets_output }}</pre></details>

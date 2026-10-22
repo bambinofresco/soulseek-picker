@@ -14,6 +14,10 @@
     <td>
       <progress max="100" value="{{ pct }}"></progress>
       <span class="small">{{ d.files_done }}/{{ d.files|length }} files · {{ d.bytes_done|mb }} of {{ d.bytes_total|mb }}</span>
+      {% if d.state in ("enqueued", "transferring") and d.queued_since %}
+      <div class="small warn-text">In {{ d.username }}'s queue{% if d.queue_position %} at position {{ d.queue_position }}{% endif %}
+        for {{ d.queued_since|ago }} (gives up after {{ queue_timeout_hours }} h)</div>
+      {% endif %}
     </td>
     <td>
       <span class="state state-{{ d.state }}">{{ d.state }}</span>
@@ -26,6 +30,9 @@
         <a class="button {{ 'primary' if imp.state in ('review', 'skipped', 'blocked') }}" href="/imports/{{ imp.id }}">
           {%- if imp.state == "review" %}Review{% elif imp.state == "skipped" %}beets skipped{% elif imp.state == "blocked" %}Needs you{% else %}Import: {{ imp.state }}{% endif -%}
         </a>
+      {% endif %}
+      {% if d.state in ("queued", "enqueued", "transferring") %}
+      <form method="post" action="/downloads/{{ d.id }}/giveup"><button>Give up and try next candidate</button></form>
       {% endif %}
       {% if d.state == "failed" or (imp and imp.state == "failed" and imp.step == "verify") %}
       <form method="post" action="/downloads/{{ d.id }}/next"><button>Try next candidate</button></form>

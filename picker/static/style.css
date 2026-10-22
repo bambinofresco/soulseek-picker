@@ -188,6 +188,10 @@ table.candidates .sidecars .icon.log-bad { background: var(--error-bg); color: v
 .log-summary p { margin: 4px 0; }
 button.small { font-size: 0.8em; padding: 2px 6px; margin-top: 4px; }
 .stuck td { vertical-align: middle; }
+section.probe { max-width: 960px; margin-top: 24px; }
+.htmx-indicator { display: none; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline-block; }
+table.tags td { padding: 2px 8px; }
 
 table.files { border-collapse: collapse; font-size: 0.85em; width: 100%; }
 table.files td { padding: 2px 8px; border: none; }

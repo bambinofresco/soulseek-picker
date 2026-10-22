@@ -194,6 +194,10 @@ def test_webhook_debounces_per_album(client, settings, album_env):
     assert len(jobs[0].payload["paths"]) == 2
     assert jobs[0].run_after > utcnow() + timedelta(seconds=50)
     assert client.post("/hooks/lidarr", json={"eventType": "Grab"}, headers=h).json()["result"] == "ignored Grab"
+    # Lidarr serialises enum names in camelCase; both spellings work.
+    assert client.post("/hooks/lidarr", json={**DOWNLOAD_EVENT, "eventType": "download"}, headers=h).json()["result"].startswith("merged")
+    # Every authenticated body is kept for the probe.
+    assert len(list((settings.config_dir / "probe" / "webhooks").glob("*.json"))) == 4
 
 
 class FakeLidarr:

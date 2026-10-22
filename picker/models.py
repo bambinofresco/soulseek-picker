@@ -103,7 +103,10 @@ class Download(SQLModel, table=True):
     bytes_total: int = 0
     bytes_done: int = 0
     files_done: int = 0
-    last_progress_at: datetime | None = None
+    last_progress_at: datetime | None = None  # set once bytes flow; the stall clock
+    queued_since: datetime | None = None  # set while waiting in the uploader's queue; the queue clock
+    queue_position: int | None = None
+    give_up: bool | None = None  # set by "Give up and try next"; the job stops on its next poll
     error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None
@@ -133,6 +136,7 @@ class Import(SQLModel, table=True):
     integrity: list = json_field(list)  # per file: {"name", "ok", "detail"}
     spectrograms: list = json_field(list)  # file names under spectrogram_dir/<id>/
     beets_output: str | None = None
+    tags: dict | None = Field(default=None, sa_column=Column(JSON))  # audio.tag_snapshot after beets
     notes: list = json_field(list)  # human-readable warnings for History
     error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)

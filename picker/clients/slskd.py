@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 
 import httpx
@@ -40,6 +41,7 @@ class SlskdClient:
             headers={"X-API-Key": api_key},
             timeout=DEFAULT_TIMEOUT,
         )
+        self._batches: bool | None = None
 
     async def aclose(self) -> None:
         await self.http.aclose()
@@ -60,7 +62,8 @@ class SlskdClient:
         body = {
             "id": search_id,
             "searchText": text,
-            "searchTimeout": timeout_s,
+            # Milliseconds, counted from the last response (slskd passes it to Soulseek.NET as-is).
+            "searchTimeout": timeout_s * 1000,
             "responseLimit": response_limit,
             "fileLimit": file_limit,
             "filterResponses": True,
@@ -85,20 +88,51 @@ class SlskdClient:
 
     # Transfers
 
+    async def supports_batches(self) -> bool:
+        """The batch download API arrived in slskd 0.26.0."""
+        if self._batches is None:
+            version = (await self.application()).get("version") or {}
+            text = (version.get("current") or version.get("full") or "") if isinstance(version, dict) else str(version)
+            numbers = [int(n) for n in re.findall(r"\d+", text)[:3]]
+            self._batches = tuple(numbers) >= (0, 26, 0) if numbers else True
+        return self._batches
+
     async def enqueue_batch(self, username: str, files: list[dict], destination: str) -> dict | None:
-        """Enqueue via the batch API (slskd >= 0.26). Returns None when the server lacks it (404)."""
-        body = {"username": username, "files": files, "options": {"destination": destination}}
-        resp = await self._call("POST", "/transfers/downloads/batches", json=body, ok_statuses=(404,))
-        if resp.status_code == 404:
+        """Enqueue via the batch API. Returns None when this slskd predates it.
+
+        Files land flat in <downloads>/<destination>/<file name>. The reply is
+        {batch: {id, transfers, ...}, failures: [{filename, message}]}: 201 all queued,
+        207 some failed, 200 none queued. 404 means the user is offline; 429 means
+        another enqueue is running.
+        """
+        if not await self.supports_batches():
             return None
+        body = {
+            "username": username,
+            "files": [{"filename": f["filename"], "size": f["size"]} for f in files],
+            "options": {"destination": destination},
+        }
+        for attempt in range(6):
+            resp = await self._call("POST", "/transfers/downloads/batches", json=body, ok_statuses=(404, 429))
+            if resp.status_code != 429:
+                break
+            await asyncio.sleep(1 + attempt)
+        else:
+            raise ServiceError(SERVICE, "slskd kept refusing the enqueue (429: another enqueue is running)", 429)
+        if resp.status_code == 404:
+            raise ServiceError(SERVICE, f"{username} is offline", 404)
         data = resp.json() if resp.content else {}
+        failures = data.get("failures") or []
         if resp.status_code == 200:
-            raise ServiceError(SERVICE, "batch accepted but no files were queued", 200)
-        data["_status"] = resp.status_code  # 201 all queued, 207 partial
+            first = failures[0]["message"] if failures else "no reason given"
+            raise ServiceError(SERVICE, f"slskd queued none of the files ({first})", 200)
+        data["_status"] = resp.status_code
+        data["_batch_id"] = (data.get("batch") or {}).get("id") or data.get("id")
         return data
 
     async def enqueue_legacy(self, username: str, files: list[dict]) -> None:
-        await self._call("POST", f"/transfers/downloads/{username}", json=files)
+        body = [{"filename": f["filename"], "size": f["size"]} for f in files]
+        await self._call("POST", f"/transfers/downloads/{username}", json=body)
 
     async def get_batch(self, batch_id: str) -> dict:
         return (await self._call("GET", f"/transfers/downloads/batches/{batch_id}")).json()
@@ -110,6 +144,16 @@ class SlskdClient:
             return []
         data = resp.json()
         return [f for d in data.get("directories", []) for f in d.get("files", [])]
+
+    async def queue_position(self, username: str, transfer_id: str) -> int | None:
+        """The file's place in the uploader's queue (slskd asks the peer). None if unknown."""
+        resp = await self._call("GET", f"/transfers/downloads/{username}/{transfer_id}/position", ok_statuses=(404,))
+        if resp.status_code == 404 or not resp.content:
+            return None
+        data = resp.json()
+        if isinstance(data, dict):
+            data = data.get("placeInQueue", data.get("position"))
+        return int(data) if isinstance(data, (int, float)) else None
 
     async def cancel_download(self, username: str, transfer_id: str) -> None:
         await self._call("DELETE", f"/transfers/downloads/{username}/{transfer_id}", ok_statuses=(404,))

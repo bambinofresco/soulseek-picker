@@ -192,13 +192,18 @@ def test_import_review_page(client, with_editions, state, expect):
                      album_dir="/music/Radiohead/OK Computer (1997)" if state == "imported" else None,
                      integrity=[{"name": "01.flac", "ok": True, "detail": "200 s"}], spectrograms=["1.png"],
                      beets_output="Skipping." if state == "skipped" else None, notes=["a note"],
-                     error="target exists" if state == "blocked" else None)
+                     error="target exists" if state == "blocked" else None,
+                     tags={"file": "01.flac", "error": None, "tags": {"label": "Toshiba-EMI", "catalognumber": "TOCP-50201",
+                                                                      "musicbrainz_albumid": "jp-cd"}} if state == "imported" else None)
         s.add(imp)
         s.commit()
         s.refresh(imp)
     html = client.get(f"/imports/{imp.id}").text
     assert expect in html
     assert "1997-05-28 · JP · CD · Toshiba-EMI · TOCP-50201" in html
+    if state == "imported":
+        assert "tags match the chosen edition" in html and "CATALOGNUMBER" in html
+        assert "tags match the chosen edition" in client.get("/history").text
     assert client.get("/history").status_code == 200
     downloads = client.get("/downloads").text
     assert f"/imports/{imp.id}" in downloads
@@ -216,3 +221,23 @@ def test_missing_columns_are_added(tmp_path):
     init_db(db)
     cols = {row[1] for row in sqlite3.connect(db).execute("PRAGMA table_info(candidate)")}
     assert {"parsed", "sidecars", "upload_speed"} <= cols
+
+
+def test_give_up_starts_the_next_candidate(client, monkeypatch):
+    from picker import web
+    from picker.models import Download
+    seed()
+    with session() as s:
+        alice = s.exec(select(Candidate).where(Candidate.username == "alice")).one()
+        dl = Download(candidate_id=alice.id, search_id=alice.search_id, rg_mbid="rg-1", username="alice", folder="m",
+                      destination="picker/1", files=[], state="enqueued")
+        s.add(dl)
+        s.commit()
+        s.refresh(dl)
+    started = []
+    monkeypatch.setattr(web, "start_download", lambda c, rg, rel: started.append(c.username))
+    resp = client.post(f"/downloads/{dl.id}/giveup", follow_redirects=False)
+    assert resp.status_code == 303
+    with session() as s:
+        assert s.get(Download, dl.id).give_up is True
+    assert started == ["bob"]

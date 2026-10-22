@@ -99,10 +99,11 @@ async def stuck_scheduler() -> None:
 
 def receive_webhook(payload: dict) -> str:
     """Queue (or push back) the retag for this album. Returns what was done, for the response."""
-    event = payload.get("eventType")
-    if event == "Test":
+    event = str(payload.get("eventType") or "")
+    kind = event.lower()  # Lidarr serialises enums in camelCase ("download", "test")
+    if kind == "test":
         return "test ok"
-    if event != "Download":
+    if kind != "download":
         return f"ignored {event}"
     album = payload.get("album") or {}
     album_id = album.get("id")

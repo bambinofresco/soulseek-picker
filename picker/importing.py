@@ -20,21 +20,20 @@ from __future__ import annotations
 import errno
 import os
 import posixpath
-import re
 import shutil
 from pathlib import Path
 
 from sqlmodel import select
 
-from . import audio, beets
+from . import albums, audio, beets
 from .clients import services
 from .clients.http import ServiceError
 from .config import Settings, get_settings
 from .db import session
 from .jobs import JobFailed, handler, log_event, worker
 from .models import Album, Download, Import, Job, utcnow
+from .naming import FolderValues, album_folder, clean_component, clean_value
 
-ILLEGAL = re.compile(r'[<>"|?*\x00-\x1f]')
 
 
 class Blocked(Exception):
@@ -56,16 +55,44 @@ def _note(imp: Import, message: str) -> None:
 
 
 def safe_name(name: str) -> str:
-    """A folder name that works on every filesystem Lidarr and Plex might sit on."""
-    name = ILLEGAL.sub("", name.replace(":", " -").replace("/", "+").replace("\\", "+"))
-    name = re.sub(r"\s+", " ", name).strip().rstrip(".")
-    return name or "Unknown"
+    """One folder-name component, cleaned the way Lidarr cleans token values."""
+    return clean_component(clean_value(name)) or "Unknown"
 
 
-def album_folder_name(template: str, album: Album) -> str:
-    year = (album.first_release_date or "")[:4]
-    name = template.format(album=album.title, artist=album.artist, year=year)
-    return safe_name(name.replace("()", "").replace("[]", ""))
+async def folder_values(imp: Import, album: Album, settings: Settings) -> FolderValues:
+    """Values for the album folder template.
+
+    Title and year come from Lidarr's album when Lidarr has it, so the folder matches the
+    one Lidarr would build; otherwise from MusicBrainz. Edition extras come from the
+    chosen release.
+    """
+    title, date = album.title, album.first_release_date
+    if settings.lidarr_api_key:
+        try:
+            lidarr_album = await services().lidarr.album_by_foreign_id(imp.rg_mbid)
+        except ServiceError:
+            lidarr_album = None
+        if lidarr_album:
+            title, date = lidarr_album.get("title") or title, lidarr_album.get("releaseDate") or date
+    edition = None
+    try:
+        edition = next((e for e in await albums.album_editions(imp.rg_mbid) if e.id == imp.release_mbid), None)
+    except ServiceError:
+        pass
+    year = (date or "")[:4]
+    return FolderValues(
+        album_title=title,
+        release_year=year if year.isdigit() else None,
+        artist_name=album.artist,
+        album_type=album.primary_type or "",
+        album_mbid=album.rg_mbid,
+        artist_mbid=album.artist_mbid or "",
+        catalog_number=(edition.catalog_numbers[:1] or [""])[0] if edition else "",
+        label=(edition.labels[:1] or [""])[0] if edition else "",
+        country=edition.country if edition else "",
+        media=edition.format_summary if edition else "",
+        edition_date=edition.date if edition else "",
+    )
 
 
 def within(path: Path, root: Path) -> bool:
@@ -192,7 +219,8 @@ async def _pipeline(imp: Import) -> None:
 
     if imp.step in ("artist", "place"):
         artist_dir = await _artist_dir(imp, album, settings)
-        _place(imp, album, artist_dir, settings)
+        name = album_folder(settings.album_folder_template, await folder_values(imp, album, settings))
+        _place(imp, artist_dir / name)
     if imp.step == "beets":
         if not await _beets(imp, settings):
             return
@@ -247,7 +275,7 @@ async def _artist_dir(imp: Import, album: Album, settings: Settings) -> Path:
         )
         _note(imp, f"Added {album.artist} to Lidarr (monitor {settings.lidarr_monitor}, new items {settings.lidarr_monitor_new_items})")
         # Wait for the refresh so the album exists in Lidarr before the edition is selected.
-        cmd = await lidarr.command("RefreshArtist", artistId=artist["id"])
+        cmd = await lidarr.command("RefreshArtist", artistIds=[artist["id"]])
         await lidarr.wait_for_command(cmd["id"])
     path = Path(artist["path"])
     if not within(path, settings.music_dir):
@@ -255,8 +283,7 @@ async def _artist_dir(imp: Import, album: Album, settings: Settings) -> Path:
     return path
 
 
-def _place(imp: Import, album: Album, artist_dir: Path, settings: Settings) -> None:
-    target = artist_dir / album_folder_name(settings.album_folder_template, album)
+def _place(imp: Import, target: Path) -> None:
     src = Path(imp.source_dir or "")
     if imp.album_dir and Path(imp.album_dir).is_dir() and not src.exists():
         _save(imp, step="beets")  # placed before a restart
@@ -285,7 +312,7 @@ async def _beets(imp: Import, settings: Settings) -> bool:
                                       pretend=settings.beets_pretend)
     _save(imp, beets_output=result.output)
     if result.imported:
-        _save(imp, step="lidarr")
+        _save(imp, step="lidarr", tags=audio.tag_snapshot(album_dir))
         log_event(imp.job_id, imp.rg_mbid, "beets tagged the album" + (" (forced)" if imp.force else ""))
         return True
     if result.skipped:

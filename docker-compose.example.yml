@@ -1,62 +1,31 @@
-# Example stack: the picker beside slskd (inside Gluetun's network) and Lidarr.
-# Paths: mount the same host folders at the same container paths everywhere, so
-# /downloads/soulseek and /music mean the same thing to slskd, Lidarr, the picker and Plex.
+# The picker alone, laid out like the Unraid template (unraid/picker.xml): Docker's default
+# bridge network, services reached by the server's LAN IP, one /mediadata volume mapped
+# the same way as in slskd and Lidarr. Replace UNRAID_IP and the placeholders.
 
 services:
   picker:
-    build: .
+    image: ghcr.io/bambinofresco/soulseek-picker:latest
     container_name: picker
     restart: unless-stopped
+    network_mode: bridge
     ports:
       - "8765:8765"
     environment:
       PUID: "99"
       PGID: "100"
       TZ: Europe/London
-      SLSKD_URL: http://gluetun:5030     # slskd shares Gluetun's network stack
-      SLSKD_API_KEY: change-me           # ReadWrite or Administrator role
-      LIDARR_URL: http://lidarr:8686
+      SLSKD_URL: http://UNRAID_IP:5030       # published on Gluetun
+      SLSKD_API_KEY: change-me
+      LIDARR_URL: http://UNRAID_IP:8686
       LIDARR_API_KEY: change-me
-      WEBHOOK_USERNAME: lidarr          # what Lidarr's Webhook connection sends to /hooks/lidarr
+      WEBHOOK_USERNAME: lidarr
       WEBHOOK_PASSWORD: change-me
-      PLEX_URL: http://plex:32400
+      PLEX_URL: http://UNRAID_IP:32400
       PLEX_TOKEN: change-me
       PLEX_SECTION_ID: "1"
-      MB_CONTACT: you@example.com        # sent in the MusicBrainz User-Agent
+      MB_CONTACT: you@example.com
+      DOWNLOAD_DIR: /mediadata/soulseek/complete
+      MUSIC_DIR: /mediadata/media/music
     volumes:
       - /mnt/user/appdata/picker:/config
-      - /mnt/user/downloads/soulseek:/downloads/soulseek
-      - /mnt/user/media/music:/music
-    networks: [media]
-
-  # For reference: the services the picker talks to.
-  gluetun:
-    image: qmcgaw/gluetun
-    cap_add: [NET_ADMIN]
-    environment:
-      VPN_SERVICE_PROVIDER: protonvpn
-      # ... your ProtonVPN settings
-    ports:
-      - "5030:5030"   # slskd web UI and API
-    networks: [media]
-
-  slskd:
-    image: slskd/slskd
-    network_mode: "service:gluetun"
-    environment:
-      SLSKD_DOWNLOADS_DIR: /downloads/soulseek
-    volumes:
-      - /mnt/user/appdata/slskd:/app
-      - /mnt/user/downloads/soulseek:/downloads/soulseek
-
-  lidarr:
-    image: ghcr.io/hotio/lidarr:nightly
-    volumes:
-      - /mnt/user/appdata/lidarr:/config
-      - /mnt/user/downloads/soulseek:/downloads/soulseek
-      - /mnt/user/media/music:/music
-    networks: [media]
-
-networks:
-  media:
-    name: media
+      - /mnt/user/mediadata:/mediadata

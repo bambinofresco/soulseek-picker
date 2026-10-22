@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import base64
+from html import escape
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -14,14 +15,14 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlmodel import select
 
-from . import albums, health, importing, lidarr_feed, prefetching
+from . import albums, health, importing, lidarr_feed, prefetching, probe
 from .beets import config_warnings as beets_config_warnings
 from .clients import reset_services, services
 from .clients.http import ServiceError
 from .clients.musicbrainz import parse_mb_url
 from .config import SECRET_FIELDS, Settings, env_locked, get_settings, save_settings
 from .db import session
-from .downloading import downloads_for_search, start_download
+from .downloading import downloads_for_search, request_give_up, start_download
 from .models import Album, Candidate, Download, Import, Job, JobEvent, Search
 from .editions import Edition
 from .matching import completeness, rip_quality
@@ -84,12 +85,20 @@ def _edition_label(e: Edition | None) -> str:
     return " · ".join(p for p in parts if p)
 
 
+def _ago(ts: datetime | None) -> str:
+    """'3 min', '1 h 12 min' since a UTC timestamp."""
+    if ts is None:
+        return ""
+    minutes = int((datetime.now(timezone.utc) - ts).total_seconds() // 60)
+    return f"{minutes // 60} h {minutes % 60} min" if minutes >= 60 else f"{minutes} min"
+
+
 def _signed(seconds: float | None) -> str:
     return "" if seconds is None else f"{seconds:+.1f} s"
 
 
 templates.env.filters.update(
-    mb=_mb, khz=_khz, speed=_speed, duration=_duration, local=_local, edition=_edition_label, signed=_signed,
+    mb=_mb, khz=_khz, speed=_speed, duration=_duration, local=_local, edition=_edition_label, signed=_signed, ago=_ago,
 )
 templates.env.globals["app_warnings"] = lambda: health.path_warnings(get_settings()) + beets_config_warnings(get_settings())
 
@@ -293,9 +302,17 @@ def _downloads_context() -> dict:
         "rows": rows,
         "albums": album_rows,
         "imports": imports,
+        "queue_timeout_hours": get_settings().queue_timeout_hours,
         "active": any(d.state in ACTIVE_DOWNLOAD for d in rows)
         or any(i.state in ("verifying", "importing") for i in imports.values()),
     }
+
+
+@router.post("/downloads/{download_id}/giveup")
+async def download_give_up(download_id: int):
+    """Stop waiting on this folder now and start the next-best one for the same edition."""
+    request_give_up(download_id)
+    return await download_next(download_id)
 
 
 @router.post("/downloads/{download_id}/next")
@@ -344,6 +361,8 @@ async def lidarr_webhook(request: Request):
         payload = await request.json()
     except ValueError:
         return JSONResponse({"error": "expected a JSON body"}, status_code=400)
+    if isinstance(payload, dict):
+        probe.save_webhook(settings, payload)  # for the probe to check the payload shape
     return {"result": lidarr_feed.receive_webhook(payload)}
 
 
@@ -437,7 +456,7 @@ FORM_SECTIONS = {
     "MusicBrainz": ["mb_contact"],
     "Search": ["search_timeout", "search_response_limit", "search_file_limit", "min_flac_folders"],
     "Preferences": [
-        "flac_only", "prefer_original", "auto_import", "stuck_days", "stall_timeout_minutes",
+        "flac_only", "prefer_original", "auto_import", "stuck_days", "stall_timeout_minutes", "queue_timeout_hours",
         "download_scans", "max_sidecar_mb",
     ],
     "Lidarr defaults for new artists": [
@@ -488,6 +507,23 @@ async def settings_save(request: Request):
         return await settings_page(request, error=str(exc).splitlines()[0])
     await reset_services()
     return RedirectResponse("/settings?saved=1", status_code=303)
+
+
+@router.post("/settings/probe", response_class=HTMLResponse)
+async def settings_probe():
+    """Run the probe (takes up to a minute: it waits for one small Soulseek search)."""
+    report = await probe.run_probe(get_settings())
+    return HTMLResponse(f'<pre class="output">{escape(report.text())}</pre>')
+
+
+@router.get("/settings/probe", response_class=HTMLResponse)
+async def settings_probe_latest():
+    latest = get_settings().config_dir / "probe" / "latest.txt"
+    try:
+        report = (Path(latest.read_text(encoding="utf-8").strip()) / "report.txt").read_text(encoding="utf-8")
+    except OSError:
+        return HTMLResponse('<p class="muted small">No probe has run yet.</p>')
+    return HTMLResponse(f'<pre class="output">{escape(report)}</pre>')
 
 
 @router.post("/settings/test/{service}", response_class=HTMLResponse)

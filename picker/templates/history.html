@@ -5,7 +5,7 @@
 {% if rows %}
 <div class="table-wrap">
 <table class="grid">
-  <thead><tr><th>Date</th><th>Album</th><th>Edition</th><th>From</th><th>Folder</th><th>Outcome</th><th>beets</th></tr></thead>
+  <thead><tr><th>Date</th><th>Album</th><th>Edition</th><th>From</th><th>Folder</th><th>Outcome</th><th>Tags / beets</th></tr></thead>
   <tbody>
   {% for i in rows %}
   {% set a = albums.get(i.rg_mbid) %}
@@ -16,7 +16,10 @@
     <td>{{ i.username or ("Lidarr" if i.source == "lidarr" else "") }}</td>
     <td class="mono small">{{ i.album_dir or i.source_dir or "" }}</td>
     <td><span class="state state-{{ i.state }}">{{ i.state }}</span>{% if i.notes %} <span class="badge warn" title="{{ i.notes|join('\n') }}">{{ i.notes|length }} note{{ "s" if i.notes|length > 1 }}</span>{% endif %}</td>
-    <td>{% if i.beets_output %}<details><summary class="small">output</summary><pre class="output">{{ i.beets_output }}</pre></details>{% endif %}</td>
+    <td>
+      {% if i.tags %}{% set imp = i %}<details><summary class="small">tags</summary>{% include "_tags.html" %}</details>{% endif %}
+      {% if i.beets_output %}<details><summary class="small">output</summary><pre class="output">{{ i.beets_output }}</pre></details>{% endif %}
+    </td>
   </tr>
   {% endfor %}
   </tbody>
