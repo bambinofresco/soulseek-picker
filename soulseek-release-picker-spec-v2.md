@@ -6,7 +6,7 @@ Oct 22, 2026 · follows [soulseek-release-picker-spec.md](soulseek-release-picke
 
 v1 picks an edition, downloads it, checks it and files it. v2 makes three kinds of improvement, built in this order:
 
-1. **What ends up in the library.** See each folder's real contents before judging it, detect lossy transcodes after download, verify rips against the CUETools and AccurateRip databases, and search by catalog number.
+1. **What ends up in the library.** Detect lossy transcodes after download, verify rips against the CUETools and AccurateRip databases, and search by catalog number.
 2. **Design.** A recommendation card that weighs match quality, verification and how fast the folder will arrive; edition preferences (country, format, no remasters); a phone layout; Test-before-Save on Settings.
 3. **Workflow.** A queue of albums to work through, a discography view per artist, and upgrades of albums already in the library.
 
@@ -17,27 +17,21 @@ v1 picks an edition, downloads it, checks it and files it. v2 makes three kinds 
 - Every external call has a timeout and a clear error on the page that triggered it.
 
 **Facts to verify before building** (each phase starts by reading the source or probing the real service; the same approach as v1's probe)
-- slskd 0.26.1 `POST /api/v0/users/{username}/directory`: request body, response shape, how it reports an offline user, and whether it returns subdirectories.
-- Which Soulseek clients return only files whose path matches the search words (Nicotine+, SoulseekQt, slskd), so the sidecar gap is understood rather than assumed.
 - CUETools DB: the `lookup2.php` API, its XML, and the exact CRC the database stores (CUETools source, `CUETools.CTDB` and `CUETools.CDRepair`). AccurateRip: the v1/v2 track CRCs and the `dBAR` URL layout (whipper's `accurip.py` is a Python reference).
 - `sox stat -freq` output, or decode with ffmpeg and FFT in numpy.
 - MusicBrainz `release-group` browse by artist: paging and the `primary-type`/`secondary-types` fields.
 
 ## Part 1: what ends up in the library
 
-### 1.1 Complete folder listings
+### 1.1 Folder listings (dropped)
 
-**Problem.** A Soulseek search response is not the folder. Peers return only files whose path matches the query words, and slskd caps files per response. A folder can show 10 of 12 tracks and no `.log`, so track counts, durations, sidecar icons and the log prefetch all work from an incomplete list. In v1's first real runs, logs were only found when the folder *name* happened to match the query.
+Investigated and dropped on Oct 22. The premise was wrong: Soulseek clients match the search words against a file's whole path, folder names included (Nicotine+ indexes folder and file words; slskd runs a full-text match over the path), so a folder that matched the search usually comes back complete, logs and art included. It is only cut off when the uploader's client caps its reply (slskd: 500 files) or the folder path lacks the search words.
 
-**Fix.** After grouping, fetch the real listing of each promising folder from the uploader and rebuild the candidate from it.
+The tools to fix those rare cases were not good enough:
+- slskd's per-folder listing (`POST /users/{u}/directory`) returns one level with bare file names and cannot see disc subfolders. When the uploader runs slskd, it also returns files from subfolders and from similarly named neighbouring folders (`OK Computer (Deluxe)`) flattened into one list, which would send the picker after files that don't exist.
+- The exact alternative, a full browse of the uploader's share, goes up beyond the folder and fetches the whole share. Out of scope by choice: a folder that doesn't come up in the main search is probably not a close match anyway.
 
-- **Which folders:** every candidate that passes the default filter, best-ranked first, up to `listing_limit` (default 40) per search; at most 5 users at a time; 20 s timeout per user. Others get a **Browse folder** button (the v1 action that was never built).
-- **Call:** `POST /api/v0/users/{username}/directory` `{directory}` for the candidate folder and, for multi-disc candidates, each disc subfolder. Cache by `(username, folder)` for the session; a repeat search within a day reuses it.
-- **Merge:** the listing replaces the response's file list for that folder (files, sizes, per-file attributes where the listing has them). Files the search returned but the listing lacks are kept and flagged, since a listing can also be partial.
-- **Then:** re-run parsing, matching and log-prefetch eligibility for that candidate; the row updates in place (the v1 poller already handles per-row updates). The row shows a **listed** mark; until then, counts are shown as "10+ (search result)".
-- **Browse folder** also opens a panel with the folder's tree and the names of its sibling folders under the same parent, so the uploader's other editions of the album are one click away ("also has: `OK Computer [Japan]`, `OK Computer (Vinyl)`"). Clicking a sibling adds it as a candidate.
-
-**Done when** on 5 real albums, candidates with a listing show the same file count as slskd's own browse view, and log prefetch finds logs that the search response did not include.
+Cut-off folders are already handled: the default filter hides folders with fewer than half the tracks of the shortest edition, and a track-count mismatch caps the match at Low.
 
 ### 1.2 Transcode detection
 
@@ -84,7 +78,7 @@ v1 picks an edition, downloads it, checks it and files it. v2 makes three kinds 
 
 ### 2.1 Recommendation card
 
-At the top of the album page, above the table, once the search and the listings have settled:
+At the top of the album page, above the table, once the search, matching and log prefetches have settled:
 
 > **Best pick:** alice · `1997 - OK Computer [CDP 7243 8 55229 2 5]`
 > Exact by disc ID · EAC log, AccurateRip 12/12 · complete, cover art · 16/44.1 · free slot, ~2.4 MB/s → about 3 minutes
@@ -136,7 +130,7 @@ Scores are additive and tunable in one table like v1's match weights; the tiers 
 A list of albums to work through, on its own page and summarised on Home.
 
 - **Add from:** search results (Add to queue next to Pick), the discography view, the Stuck-in-Lidarr list (**Add all**), pasted MusicBrainz URLs (one per line).
-- **Automatic steps:** searching, listings, log prefetch and matching run for queued albums one after another (slskd allows one search at a time), so by the time the user opens an album, its table and recommendation card are ready. Downloads are never started automatically.
+- **Automatic steps:** searching, log prefetch and matching run for queued albums one after another (slskd allows one search at a time), so by the time the user opens an album, its table and recommendation card are ready. Downloads are never started automatically.
 - **Per-album status:** queued → searched (best tier, recommended folder) → downloading → review → imported / skipped, with the recommendation card's one-line summary in the list.
 - **Review list:** `/review` shows every import waiting on the user, with the integrity, transcode and verification results and the Import / Reject buttons inline, so a batch can be cleared without opening each page.
 - **Skip** removes an album from the queue without searching; **Snooze** hides it for N days.
@@ -171,14 +165,13 @@ Replace an album already in the library with a better rip or a different edition
 
 | Phase | Delivers | Done when |
 | --- | --- | --- |
-| 1. Listings | Folder listings for ranked candidates, Browse folder, sibling folders | 1.1 |
-| 2. Transcode detection | Band analysis, verdicts, Review warning, fixtures | 1.2 |
-| 3. Rip verification | CTDB and AccurateRip checks in the pipeline, per-track results | 1.3 |
-| 4. Catalog search | Extra searches on pin or weak match, found-by marks | 1.4 |
-| 5. Recommendation and preferences | Card, time estimate, preference settings and badges | A pinned preference changes the recommended folder as expected on 5 real albums |
-| 6. Phone layout and Test-before-Save | 2.3, 2.4 | No horizontal scroll at 390 px; Test works unsaved |
-| 7. Queue and review list | 3.1 | Ten queued albums are searched and matched unattended; the review list clears them |
-| 8. Discography | 3.2 | An artist page shows held editions and Lidarr state correctly for a known artist |
-| 9. Upgrades | 3.3 | The 3.3 acceptance test |
+| 1. Transcode detection | Band analysis, verdicts, Review warning, fixtures | 1.2 |
+| 2. Rip verification | CTDB and AccurateRip checks in the pipeline, per-track results | 1.3 |
+| 3. Catalog search | Extra searches on pin or weak match, found-by marks | 1.4 |
+| 4. Recommendation and preferences | Card, time estimate, preference settings and badges | A pinned preference changes the recommended folder as expected on 5 real albums |
+| 5. Phone layout and Test-before-Save | 2.3, 2.4 | No horizontal scroll at 390 px; Test works unsaved |
+| 6. Queue and review list | 3.1 | Ten queued albums are searched and matched unattended; the review list clears them |
+| 7. Discography | 3.2 | An artist page shows held editions and Lidarr state correctly for a known artist |
+| 8. Upgrades | 3.3 | The 3.3 acceptance test |
 
 Each phase ships with tests (unit for the pure parts, fixture-driven for analysis and verification, mocked services for the rest) and a README section. The probe gains checks for any new external call.
