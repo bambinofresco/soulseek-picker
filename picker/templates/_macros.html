@@ -1,0 +1,6 @@
+{#- Evidence lines for a badge's hover text; `meaning` narrows to one flag or territory. -#}
+{% macro ev(p, key, meaning=None) -%}
+{%- for e in (p.evidence or {}).get(key, []) if meaning is none or e.meaning == meaning or e.meaning.endswith(": " ~ meaning) -%}
+“{{ e.token }}” → {{ e.meaning }}{% if e.segment %} · in “{{ e.segment }}”{% endif %}{{ "\n" }}
+{%- endfor -%}
+{%- endmacro %}

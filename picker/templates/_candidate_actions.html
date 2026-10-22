@@ -1,0 +1,9 @@
+{#- Download / status and log-fetch controls; shown in the sticky Actions column and again in the expanded row. -#}
+{% if dl %}{% include "_download_status.html" %}
+{% else %}{% include "_download_button.html" %}
+{% endif %}
+{% if li.state in ("queued", "fetching") %}<span class="small muted">fetching log…</span>
+{% elif li.state == "failed" %}<span class="small error-text" title="{{ li.error }}">log fetch failed</span>
+{% elif (c.sidecars.log or c.sidecars.cue) and not li.state %}
+<button class="small" hx-post="/candidates/{{ c.id }}/prefetch" hx-swap="outerHTML">Fetch log</button>
+{% endif %}

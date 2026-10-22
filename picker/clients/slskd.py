@@ -42,6 +42,7 @@ class SlskdClient:
             timeout=DEFAULT_TIMEOUT,
         )
         self._batches: bool | None = None
+        self._attempts: int | None = None
 
     async def aclose(self) -> None:
         await self.http.aclose()
@@ -87,6 +88,16 @@ class SlskdClient:
         await self._call("PUT", f"/searches/{search_id}", ok_statuses=(404,))
 
     # Transfers
+
+    async def retry_attempts(self) -> int:
+        """slskd's own download attempts per file (transfers.download.retry.attempts, default 3)."""
+        if self._attempts is None:
+            try:
+                retry = ((await self.options()).get("transfers") or {}).get("download", {}).get("retry") or {}
+                self._attempts = int(retry.get("attempts") or 3)
+            except (ServiceError, TypeError, ValueError, AttributeError):
+                return 3
+        return self._attempts
 
     async def supports_batches(self) -> bool:
         """The batch download API arrived in slskd 0.26.0."""

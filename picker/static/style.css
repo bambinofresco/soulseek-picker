@@ -126,9 +126,10 @@ table.grid th { font-weight: 600; font-size: 0.85em; color: var(--muted); }
 table.candidates tr.cand { cursor: pointer; }
 table.candidates tr.cand:hover { background: var(--bg); }
 table.candidates .folder .user { display: block; font-weight: 600; }
-table.candidates .folder .path { display: block; font-family: var(--mono); font-size: 0.85em; color: var(--muted); max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.candidates .folder { min-width: 14ch; max-width: 34ch; }
+table.candidates .folder .path { display: block; font-family: var(--mono); font-size: 0.85em; color: var(--muted); white-space: normal; overflow-wrap: anywhere; }
 table.candidates .sidecars .icon { font-size: 0.75em; padding: 1px 4px; border: 1px solid var(--border); border-radius: 3px; margin-right: 2px; }
-table.candidates .actions { white-space: nowrap; }
+
 table.candidates tr.detail td { background: var(--bg); }
 table.candidates th a.sort { color: inherit; }
 table.candidates th a.sort.active { color: var(--text); }
@@ -157,12 +158,12 @@ table.evidence th, table.evidence td { padding: 2px 8px; border: none; border-bo
 .tier-medium { background: var(--src-cd); }
 .tier-low { background: var(--warn-bg); color: var(--warn); }
 .tier-unknown { color: var(--muted); }
-table.candidates .match { min-width: 150px; max-width: 240px; }
+table.candidates .match { min-width: 12ch; max-width: 26ch; }
 table.candidates .match .edition-name { display: block; color: var(--muted); margin-top: 2px; }
 details.one-of summary { cursor: pointer; color: var(--accent); }
 details.one-of ul { margin: 4px 0 0; padding-left: 16px; }
 table.candidates .catalog .matched { font-weight: 700; color: var(--text); }
-table.candidates .scores { margin-top: 3px; white-space: nowrap; }
+table.candidates .scores { margin-top: 3px; }
 ul.signals { list-style: none; padding: 0; margin: 8px 0; }
 .banner.pin { background: var(--flag-bg); color: var(--flag); }
 table.editions tr.pinned { background: var(--flag-bg); }
@@ -230,3 +231,23 @@ label.field input { font-family: var(--mono); }
   label.field { grid-template-columns: 1fr; }
   .topbar { gap: 12px; padding: 10px 12px; }
 }
+
+/* Candidates and downloads tables: fit the window, wrap long text, keep actions in view. */
+table.candidates, table.downloads { font-size: 0.9em; }
+table.candidates th, table.candidates td { padding: 5px 7px; }
+table.candidates .catalog span { overflow-wrap: anywhere; }
+table.candidates tbody.cand-group.open tr.cand { background: var(--bg); }
+table.candidates tbody.cand-group { border-bottom: 1px solid var(--border); }
+th.actions, td.actions {
+  position: sticky; right: 0; z-index: 1;
+  background: var(--surface);
+  box-shadow: -8px 0 8px -8px rgba(0, 0, 0, 0.35);
+}
+table.candidates td.actions { min-width: 9ch; }
+table.candidates td.actions button, table.candidates td.actions .dl-status { white-space: nowrap; }
+table.candidates tbody.cand-group.open td.actions, table.candidates tr.cand:hover td.actions { background: var(--bg); }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.small-spinner { width: 10px; height: 10px; display: inline-block; vertical-align: middle; }
+table.downloads .folder-name { overflow-wrap: anywhere; }
+table.downloads progress { width: 100%; max-width: 140px; }
+table.downloads td.actions form { margin: 2px 0; }

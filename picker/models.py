@@ -107,6 +107,11 @@ class Download(SQLModel, table=True):
     queued_since: datetime | None = None  # set while waiting in the uploader's queue; the queue clock
     queue_position: int | None = None
     give_up: bool | None = None  # set by "Give up and try next"; the job stops on its next poll
+    # filename -> {status, tries, error, not_before, failed_seen}; see picker/transfers.py
+    file_states: dict | None = Field(default=None, sa_column=Column(JSON))
+    window_files: int | None = None  # how much is requested from the uploader at once
+    window_bytes: int | None = None
+    chunked: str | None = None  # "planned" (big folder) | "limit" (uploader queue limit) | None
     error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None

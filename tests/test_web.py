@@ -144,7 +144,7 @@ def test_pinning_a_target_filters_the_table(client, with_editions):
     set_match("alice", tier="Exact", editions=["jp-cd"])
     set_match("bob", tier="Medium", editions=["uk-cd"])
     panel = client.post("/album/rg-1/target/uk-cd")
-    assert panel.headers["HX-Trigger"] == "candidates-changed"
+    assert panel.headers["HX-Trigger"] == "candidates-reload"
     assert "★" in panel.text
     html = client.get("/album/rg-1/candidates").text
     assert "bob" in html and "alice" not in html
@@ -241,3 +241,54 @@ def test_give_up_starts_the_next_candidate(client, monkeypatch):
     with session() as s:
         assert s.get(Download, dl.id).give_up is True
     assert started == ["bob"]
+
+
+def test_candidates_poll_state_and_rows(client):
+    seed()
+    state = client.get("/album/rg-1/candidates/state").json()
+    assert state["phase"] == "rows" and state["active"] is False
+    ids = [row[0] for row in state["rows"]]
+    assert len(ids) == 2 and all(len(row[1]) == 12 for row in state["rows"])
+    # Versions are stable while nothing changes...
+    assert client.get("/album/rg-1/candidates/state").json()["rows"] == state["rows"]
+    # ...and only the requested rows come back, each in its own <tbody> keyed by id.
+    html = client.get(f"/album/rg-1/candidates/rows?ids={ids[0]}").text
+    assert html.count('class="cand-group"') == 1 and f'id="cand-{ids[0]}"' in html
+    with session() as s:
+        c = s.get(Candidate, ids[0])
+        c.match = {"tier": "Exact", "editions": []}
+        s.add(c)
+        s.commit()
+    changed = dict(client.get("/album/rg-1/candidates/state").json()["rows"])
+    before = dict(state["rows"])
+    assert changed[ids[0]] != before[ids[0]] and changed[ids[1]] == before[ids[1]]
+
+
+def test_full_section_has_sticky_actions_and_poll_hooks(client):
+    seed()
+    html = client.get("/album/rg-1/candidates").text
+    assert 'data-phase="rows"' in html and "data-poll" not in html  # nothing active: no polling
+    assert '<th class="actions">' in html and 'class="detail-actions"' in html  # Download also in the expanded row
+    assert 'class="path"' in html and "text-overflow" not in html
+
+
+@pytest.mark.parametrize("state, extra, expect", [
+    ("transferring", {"chunked": "limit", "window_files": 3,
+                      "file_states": {"a": {"status": "done"}, "b": {"status": "limited"}}},
+     "Uploader queue limit: sending in chunks of 3 files (1 waiting)"),
+    ("transferring", {"file_states": {"a": {"status": "retry_wait", "error": "timed out"}}},
+     "1 file will be requested again after an error"),
+    ("partial", {"error": "1 of 14 files could not be fetched: 03.flac",
+                 "file_states": {"a": {"status": "failed"}}}, "Retry failed files"),
+])
+def test_downloads_page_explains_progress(client, state, extra, expect):
+    from picker.models import Download
+    seed()
+    with session() as s:
+        s.add(Download(candidate_id=1, search_id=1, rg_mbid="rg-1", username="u", folder=r"m\x", destination="picker/1",
+                       files=[{"filename": "a", "size": 1}], state=state, **extra))
+        s.commit()
+    html = client.get("/downloads").text
+    assert expect in html
+    if state == "partial":
+        assert "Try next candidate" in html

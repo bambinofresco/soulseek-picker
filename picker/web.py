@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 from html import escape
 import secrets
 from datetime import datetime, timezone
@@ -22,10 +24,11 @@ from .clients.http import ServiceError
 from .clients.musicbrainz import parse_mb_url
 from .config import SECRET_FIELDS, Settings, env_locked, get_settings, save_settings
 from .db import session
-from .downloading import downloads_for_search, request_give_up, start_download
+from .downloading import downloads_for_search, request_give_up, retry_failed_files, start_download
 from .models import Album, Candidate, Download, Import, Job, JobEvent, Search
 from .editions import Edition
 from .matching import completeness, rip_quality
+from .transfers import summary as transfer_summary
 from .searching import (
     latest_search,
     match_of,
@@ -176,7 +179,7 @@ async def album_toggle_target(request: Request, rg_mbid: str, release_mbid: str)
         s.add(album)
         s.commit()
     response = await album_editions_panel(request, rg_mbid)
-    response.headers["HX-Trigger"] = "candidates-changed"
+    response.headers["HX-Trigger"] = "candidates-reload"
     return response
 
 
@@ -188,21 +191,12 @@ async def album_start_search(request: Request, rg_mbid: str):
     return await album_candidates(request, rg_mbid)
 
 
-@router.get("/album/{rg_mbid}/candidates", response_class=HTMLResponse)
-async def album_candidates(
-    request: Request,
-    rg_mbid: str,
-    all: bool = False,
-    source: str = "",
-    depth: str = "",
-    sort: str = "",
-    rev: bool = False,
-):
+async def _candidates_context(rg_mbid: str, params: dict, *, with_editions: bool = True) -> dict:
+    """Everything the candidates section, its rows and its poll state need."""
     search = latest_search(rg_mbid)
     with session() as s:
         album = s.get(Album, rg_mbid)
     target = album.target_release if album else None
-    params = {"all": all, "source": source, "depth": depth, "sort": sort, "rev": rev}
 
     def qs(**overrides) -> str:
         merged = {**params, **overrides}
@@ -210,26 +204,92 @@ async def album_candidates(
 
     candidates, hidden, sources, depths = [], 0, [], []
     searching_now = search is not None and search.state in ACTIVE_SEARCH
-    active = searching_now or (search is not None and prefetching.active_prefetches(search.id))
+    downloads = {d.candidate_id: d for d in downloads_for_search(search.id)} if search else {}
+    imports = importing.imports_for([d.id for d in downloads.values()])
+    # Keep polling while anything shown in a row can still change.
+    active = searching_now or (search is not None and (
+        prefetching.active_prefetches(search.id)
+        or any(d.state in ACTIVE_DOWNLOAD for d in downloads.values())
+        or any(i.state in ("verifying", "importing") for i in imports.values())
+    ))
     if search:
-        unfiltered, hidden = ordered_candidates(search, show_all=all)
+        unfiltered, hidden = ordered_candidates(search, show_all=params["all"])
         sources = sorted({parsed(c).get("source") or "unknown" for c in unfiltered})
         depths = sorted({d for c in unfiltered if (d := quality(c)[0])})
         candidates, _ = ordered_candidates(
-            search, show_all=all, source=source or None, depth=int(depth) if depth.isdigit() else None,
-            sort=sort or None, reverse=rev, target=target,
+            search, show_all=params["all"], source=params["source"] or None,
+            depth=int(params["depth"]) if params["depth"].isdigit() else None,
+            sort=params["sort"] or None, reverse=params["rev"], target=target,
         )
     # While searching there is nothing to label yet; skip the (cached) editions lookup.
-    editions = {} if searching_now or not search else {e.id: e for e in (await _editions(rg_mbid))[0]}
-    downloads = {d.candidate_id: d for d in downloads_for_search(search.id)} if search else {}
-    return render(
-        request, "_candidates.html",
-        rg_mbid=rg_mbid, search=search, candidates=candidates, hidden=hidden, params=params, qs=qs,
-        sources=sources, depths=depths, downloads=downloads, parsed=parsed, quality=quality,
-        match_of=match_of, editions=editions, target=editions.get(target) if target else None,
-        target_id=target, rip_quality=rip_quality, completeness=completeness, active=active,
-        searching_now=searching_now, disc_id_releases=prefetching.disc_id_releases,
-    )
+    editions = {}
+    if with_editions and search and not searching_now:
+        editions = {e.id: e for e in (await _editions(rg_mbid))[0]}
+
+    if not search:
+        phase = "none"
+    elif searching_now or search.state == "failed":
+        phase = search.state
+    else:
+        phase = "rows" if candidates else "empty"
+
+    def row_version(c: Candidate) -> str:
+        """Changes whenever anything a row shows can have changed."""
+        dl = downloads.get(c.id)
+        imp = imports.get(dl.id) if dl else None
+        pct = int(20 * dl.bytes_done / (dl.bytes_total or 1)) if dl else None
+        state = [c.match, c.log_info, dl and (dl.state, pct, dl.chunked), imp and imp.state]
+        return hashlib.sha1(json.dumps(state, sort_keys=True, default=str).encode()).hexdigest()[:12]
+
+    return {
+        "rg_mbid": rg_mbid, "search": search, "candidates": candidates, "hidden": hidden, "params": params, "qs": qs,
+        "sources": sources, "depths": depths, "downloads": downloads, "parsed": parsed, "quality": quality,
+        "match_of": match_of, "editions": editions, "target": editions.get(target) if target else None,
+        "target_id": target, "rip_quality": rip_quality, "completeness": completeness, "active": active,
+        "searching_now": searching_now, "disc_id_releases": prefetching.disc_id_releases,
+        "phase": phase, "row_version": row_version,
+    }
+
+
+def _params(all: bool, source: str, depth: str, sort: str, rev: bool) -> dict:
+    return {"all": all, "source": source, "depth": depth, "sort": sort, "rev": rev}
+
+
+@router.get("/album/{rg_mbid}/candidates", response_class=HTMLResponse)
+async def album_candidates(
+    request: Request, rg_mbid: str, all: bool = False, source: str = "", depth: str = "", sort: str = "", rev: bool = False,
+):
+    ctx = await _candidates_context(rg_mbid, _params(all, source, depth, sort, rev))
+    return render(request, "_candidates.html", **ctx)
+
+
+@router.get("/album/{rg_mbid}/candidates/state")
+async def album_candidates_state(
+    request: Request, rg_mbid: str, all: bool = False, source: str = "", depth: str = "", sort: str = "", rev: bool = False,
+):
+    """For static/candidates.js: row ids and versions in display order, without rendering rows."""
+    ctx = await _candidates_context(rg_mbid, _params(all, source, depth, sort, rev), with_editions=False)
+    status = templates.env.get_template("_candidates_status.html").render(ctx)
+    return {
+        "phase": ctx["phase"],
+        "active": ctx["active"],
+        "interval": 2000 if ctx["searching_now"] else 4000,
+        "status_html": status,
+        "rows": [[c.id, ctx["row_version"](c)] for c in ctx["candidates"]],
+    }
+
+
+@router.get("/album/{rg_mbid}/candidates/rows", response_class=HTMLResponse)
+async def album_candidates_rows(
+    request: Request, rg_mbid: str, ids: str = "",
+    all: bool = False, source: str = "", depth: str = "", sort: str = "", rev: bool = False,
+):
+    """Rendered <tbody> for each requested candidate id."""
+    ctx = await _candidates_context(rg_mbid, _params(all, source, depth, sort, rev))
+    wanted = {int(x) for x in ids.split(",") if x.strip().isdigit()}
+    row = templates.env.get_template("_candidate_row.html")
+    html = "".join(row.render({**ctx, "c": c}) for c in ctx["candidates"] if c.id in wanted)
+    return HTMLResponse(html)
 
 
 @router.get("/album/{rg_mbid}/events", response_class=HTMLResponse)
@@ -280,7 +340,9 @@ async def candidate_download(request: Request, candidate_id: int):
             select(Download).where(Download.candidate_id == candidate_id, Download.state.in_(ACTIVE_DOWNLOAD))
         ).first()
     dl = existing or start_download(candidate, search.rg_mbid, release_mbid)
-    return render(request, "_download_status.html", dl=dl)
+    response = render(request, "_download_status.html", dl=dl)
+    response.headers["HX-Trigger"] = "candidates-changed"  # keep the row's status updating
+    return response
 
 
 @router.get("/downloads", response_class=HTMLResponse)
@@ -302,10 +364,23 @@ def _downloads_context() -> dict:
         "rows": rows,
         "albums": album_rows,
         "imports": imports,
+        "file_counts": lambda d: transfer_summary(d.file_states or {}),
+        "retry_errors": lambda d: "\n".join(
+            f"{n.rsplit(chr(92), 1)[-1]}: {st.get('error')}" for n, st in (d.file_states or {}).items()
+            if st.get("status") == "retry_wait"
+        ),
         "queue_timeout_hours": get_settings().queue_timeout_hours,
         "active": any(d.state in ACTIVE_DOWNLOAD for d in rows)
         or any(i.state in ("verifying", "importing") for i in imports.values()),
     }
+
+
+@router.post("/downloads/{download_id}/retry-failed")
+async def download_retry_failed(download_id: int):
+    """A partial download: request its failed files again (fresh retries), keep what arrived."""
+    if retry_failed_files(download_id) is None:
+        raise HTTPException(409, "only a partial download's failed files can be retried")
+    return RedirectResponse("/downloads", status_code=303)
 
 
 @router.post("/downloads/{download_id}/giveup")

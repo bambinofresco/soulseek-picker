@@ -63,6 +63,10 @@ class Settings(BaseModel):
     stuck_days: int = 3
     stall_timeout_minutes: int = 30  # bytes started flowing, then stopped
     queue_timeout_hours: int = 6  # waiting in the uploader's queue
+    download_retries: int = 3  # re-requests of a file after slskd's own retries are exhausted
+    retry_delay_seconds: int = 60  # times the try number
+    chunk_files: int = 20  # big folders are requested in chunks of at most this many files...
+    chunk_mb: int = 150  # ...and this many megabytes
     download_scans: bool = False
     max_sidecar_mb: int = 15
 

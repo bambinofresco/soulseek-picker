@@ -46,6 +46,12 @@ class FakeSlskd:
     async def queue_position(self, username, transfer_id):
         return 42
 
+    async def retry_attempts(self):
+        return 3
+
+    async def supports_batches(self):
+        return True
+
     async def cancel_download(self, username, transfer_id):
         self.cancelled.append(transfer_id)
 
@@ -230,25 +236,6 @@ async def test_download_completes_and_verifies(settings, monkeypatch):
     assert dl.error is None
 
 
-async def test_download_failure_cancels_the_rest(settings, monkeypatch):
-    c = make_candidate(settings)
-    fake = FakeSlskd({})
-    monkeypatch.setattr(downloading, "services", lambda: FakeServices(fake))
-    monkeypatch.setattr(downloading, "worker", type("W", (), {"enqueue": staticmethod(lambda *a, **k: run_job(a[0], a[1]))})())
-    dl = downloading.start_download(c, "rg-1")
-    fake.transfers = [
-        transfer(r"m\Album\01.flac", "Completed, Rejected", 0, "t1"),
-        transfer(r"m\Album\02.flac", "Queued, Remotely", 0, "t2"),
-    ]
-    with session() as s:
-        job = s.get(Job, dl.job_id)
-    with pytest.raises(JobFailed, match="Rejected"):
-        await downloading.run_download(job)
-    assert fake.cancelled == ["t2"]
-    with session() as s:
-        assert s.get(Download, dl.id).state == "failed"
-
-
 def _started(settings, monkeypatch, fake):
     c = make_candidate(settings)
     monkeypatch.setattr(downloading, "services", lambda: FakeServices(fake))
@@ -283,7 +270,10 @@ async def test_long_queue_wait_is_not_a_stall(settings, monkeypatch):
 async def test_queue_timeout_gives_up_and_shows_position(settings, monkeypatch):
     fake = FakeSlskd({})
     dl, job = _started(settings, monkeypatch, fake)
-    downloading._save(dl, state="enqueued", queued_since=utcnow() - timedelta(hours=7))
+    # Resuming after a restart: every file was already requested.
+    downloading._save(dl, state="enqueued", queued_since=utcnow() - timedelta(hours=7),
+                      file_states={f["filename"]: {"status": "enqueued", "tries": 0} for f in dl.files},
+                      window_files=3, window_bytes=33)
     fake.transfers = [transfer(r"m\Album\01.flac", "Queued, Remotely", 0, "t1")]
     with pytest.raises(JobFailed, match=r"waited 6 h in alice's upload queue \(position 42\)"):
         await downloading.run_download(job)

@@ -1,0 +1,16 @@
+{% if not search %}
+  <p class="muted">Not searched yet.</p>
+{% elif searching_now %}
+  <p class="progress-line"><span class="spinner"></span>
+    {% if search.current_query %}Searching “{{ search.current_query }}”{% else %}Starting search{% endif %}:
+    {{ search.response_count }} users, {{ search.file_count }} files so far
+    {% if search.queries|length > 1 and search.current_query in search.queries %}<span class="muted">(query {{ search.queries.index(search.current_query) + 1 }} of {{ search.queries|length }})</span>{% endif %}
+  </p>
+{% elif search.state == "failed" %}
+  <p class="banner error">Search failed: {{ search.error }}</p>
+{% elif not candidates %}
+  <p class="muted">No folders{% if hidden %} pass the default filter ({{ hidden }} hidden){% endif %}{% if params.source or params.depth %} match these filters{% endif %}. Queries tried: {{ search.queries|join(", ") }}</p>
+{% else %}
+  <p class="muted small">{{ candidates|length }} folders · queries: {{ search.queries|join(" · ") }} · hover a badge to see where it came from · click a row for details
+    {% if active %}<span class="spinner small-spinner" title="Matches, logs or downloads still updating"></span>{% endif %}</p>
+{% endif %}

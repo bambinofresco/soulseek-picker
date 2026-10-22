@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import re
 import time
 from collections import Counter
@@ -13,12 +14,25 @@ from sqlmodel import select
 
 from .clients import services
 from .clients.http import ServiceError
-from .clients.slskd import state_flags, transfer_failed, transfer_succeeded
+from .clients.slskd import state_flags, transfer_succeeded
 from .config import Settings, get_settings
 from .db import session
 from .grouping import split_path
 from .jobs import JobFailed, handler, log_event, worker
 from .models import Candidate, Download, Job, utcnow
+from .transfers import (
+    DONE,
+    ENQUEUED,
+    FAILED,
+    LIMITED,
+    PENDING,
+    RETRY_WAIT,
+    UNFINISHED,
+    Window,
+    classify,
+    plan_requests,
+    summary,
+)
 
 POLL_INTERVAL = 3.0
 POSITION_INTERVAL = 30.0  # seconds between queue-position lookups
@@ -77,11 +91,11 @@ def destination_for(*parts: str) -> str:
     return path
 
 
-def disc_batches(dl: Download) -> list[tuple[str, list[dict]]]:
+def disc_batches(dl: Download, files: list[dict] | None = None) -> list[tuple[str, list[dict]]]:
     """One batch per disc folder: slskd puts a batch's files flat in its destination, so
     CD1/01.flac and CD2/01.flac would collide (slskd renames the second) in one batch."""
     groups: dict[str, list[dict]] = {}
-    for f in dl.files:
+    for f in dl.files if files is None else files:
         groups.setdefault(f.get("disc") or "", []).append(f)
     out = []
     for disc in sorted(groups):
@@ -190,73 +204,171 @@ async def run_download(job: Job) -> None:
 
 
 async def _download(job: Job, dl: Download) -> None:
-    slskd = services().slskd
-    if dl.state == "queued":
-        batch_ids = []
-        for destination, files in disc_batches(dl):
-            result = await slskd.enqueue_batch(dl.username, files, destination)
-            if result is None:
-                await slskd.enqueue_legacy(dl.username, dl.files)
-                _save(dl, legacy_enqueue=True)
-                log_event(job.id, dl.rg_mbid, "slskd has no batch API; enqueued with the older per-file call")
-                break
-            batch_ids.append(str(result["_batch_id"]))
-            for failure in result.get("failures") or []:
-                log_event(job.id, dl.rg_mbid, f"slskd did not queue {split_path(failure.get('filename', ''))[-1]}: {failure.get('message')}")
-        _save(dl, batch_id=",".join(batch_ids) or None, state="enqueued", queued_since=utcnow())
-        log_event(job.id, dl.rg_mbid, f"Enqueued {len(dl.files)} files from {dl.username}")
-
-    await _track(job, dl)
+    outcome = await _track(job, dl)
+    if outcome != "completed":
+        return  # partial: the Downloads page offers retrying the failed files or the next candidate
     _verify(job, dl)
     from .importing import start_import  # imported here: importing imports this module
 
     start_import(dl)
 
 
-async def _track(job: Job, dl: Download) -> None:
+def _initial_states(dl: Download, settings: Settings) -> tuple[dict, Window, str | None]:
+    states = {f["filename"]: {"status": PENDING, "tries": 0} for f in dl.files}
+    window, chunked = Window.initial([f["size"] for f in dl.files], settings.chunk_files, settings.chunk_mb)
+    return states, window, "planned" if chunked else None
+
+
+async def _request(job: Job, dl: Download, files: list[dict], states: dict, legacy: bool) -> None:
+    """Ask slskd for these files. Files slskd says are already in progress stay enqueued."""
+    slskd = services().slskd
+    if legacy:
+        await slskd.enqueue_legacy(dl.username, files)
+    else:
+        batch_ids = [b for b in (dl.batch_id or "").split(",") if b]
+        for destination, group in disc_batches(dl, files):
+            result = await slskd.enqueue_batch(dl.username, group, destination)
+            if result is None:  # slskd lost the batch API mid-download; should not happen
+                raise JobFailed("slskd stopped accepting batch downloads")
+            batch_ids.append(str(result["_batch_id"]))
+            for failure in result.get("failures") or []:
+                message = str(failure.get("message") or "")
+                if "already in progress" not in message.lower():
+                    name = split_path(failure.get("filename", ""))[-1]
+                    log_event(job.id, dl.rg_mbid, f"slskd did not queue {name}: {message}")
+        dl.batch_id = ",".join(batch_ids)
+    for f in files:
+        st = states[f["filename"]]
+        st.update(status=ENQUEUED, failed_seen=None, not_before=None, requests=st.get("requests", 0) + 1)
+
+
+def _observe(job: Job, dl: Download, states: dict, transfers: dict, max_attempts: int, now: datetime,
+             settings: Settings) -> bool:
+    """Update each requested file from its transfer. Returns True if the uploader's queue limit was hit."""
+    limited = False
+    for name, st in states.items():
+        if st["status"] != ENQUEUED:
+            continue
+        seen = datetime.fromisoformat(st["failed_seen"]) if st.get("failed_seen") else None
+        obs = classify(transfers.get(name), max_attempts, seen, now)
+        st["failed_seen"] = obs.failed_seen.isoformat() if obs.failed_seen else None
+        short = split_path(name)[-1]
+        if obs.kind == "done":
+            st.update(status=DONE, error=None)
+        elif obs.kind == "limited":
+            limited = True
+            st.update(status=LIMITED, error=obs.reason)
+        elif obs.kind == "failed":
+            st["tries"] = st.get("tries", 0) + 1
+            st["error"] = obs.reason
+            if st["tries"] > settings.download_retries:
+                st["status"] = FAILED
+                log_event(job.id, dl.rg_mbid, f"{short} failed {st['tries']} times; giving up on it ({obs.reason})")
+            else:
+                wait = settings.retry_delay_seconds * st["tries"]
+                st.update(status=RETRY_WAIT, not_before=(now + timedelta(seconds=wait)).isoformat())
+                log_event(job.id, dl.rg_mbid, f"{short} failed ({obs.reason}); requesting it again in {wait} s "
+                                              f"(retry {st['tries']} of {settings.download_retries})")
+    for st in states.values():  # retry delays that have passed
+        if st["status"] == RETRY_WAIT and datetime.fromisoformat(st["not_before"]) <= now:
+            st["status"] = PENDING
+    return limited
+
+
+async def _track(job: Job, dl: Download) -> str:
+    """Request, follow and re-request files until every one is done ("completed") or
+    nothing more can be fetched ("partial"). One failing file never cancels the others."""
     slskd = services().slskd
     settings = get_settings()
-    wanted = {f["filename"] for f in dl.files}
+    max_attempts = await slskd.retry_attempts()
+    legacy = not await slskd.supports_batches()
+    sizes = {f["filename"]: f["size"] for f in dl.files}
+    if dl.file_states:
+        states = copy.deepcopy(dl.file_states)
+        window = Window(dl.window_files or len(dl.files), dl.window_bytes or sum(sizes.values()))
+    else:
+        states, window, chunked = _initial_states(dl, settings)
+        if legacy:  # the old per-file call can't set a destination; request everything at once
+            window, chunked = Window(len(dl.files), sum(sizes.values())), None
+        _save(dl, file_states=copy.deepcopy(states), window_files=window.files, window_bytes=window.bytes,
+              chunked=chunked, legacy_enqueue=legacy, queued_since=dl.queued_since or utcnow())
+        if chunked:
+            log_event(job.id, dl.rg_mbid, f"Requesting {len(dl.files)} files from {dl.username} in chunks of "
+                                          f"{window.files} files / {window.bytes // 1024 // 1024} MB")
+    wanted = set(sizes)
     next_position_check = 0.0
     while True:
+        now = utcnow()
         transfers = latest_transfers(await slskd.user_downloads(dl.username), wanted, dl.created_at)
         if _given_up(dl.id):
             await _cancel_unfinished(dl, transfers)
             raise JobFailed("you gave up on this folder")
-        bytes_done = sum(
-            f["size"] if transfer_succeeded(t.get("state")) else int(t.get("bytesTransferred") or 0)
-            for f in dl.files if (t := transfers.get(f["filename"]))
+
+        if _observe(job, dl, states, transfers, max_attempts, now, settings):
+            outstanding = [sizes[n] for n, st in states.items() if st["status"] == ENQUEUED]
+            window = Window.accepted(outstanding)
+            if dl.chunked != "limit":
+                log_event(job.id, dl.rg_mbid, f"{dl.username}'s queue limit refused some files; sending them in "
+                                              f"chunks of {window.files} file(s) as earlier ones finish")
+            dl.chunked = "limit"
+            if not outstanding:  # nothing accepted at all: wait before asking again
+                later = (now + timedelta(seconds=settings.retry_delay_seconds)).isoformat()
+                for st in states.values():
+                    if st["status"] == LIMITED:
+                        st["not_before"] = later
+
+        to_request = plan_requests(dl.files, states, window, now)
+        if to_request:
+            await _request(job, dl, to_request, states, legacy)
+
+        live = {n: t for n, t in transfers.items() if states[n]["status"] == ENQUEUED}
+        bytes_done = sum(sizes[n] for n, st in states.items() if st["status"] == DONE) + sum(
+            int(t.get("bytesTransferred") or 0) for t in live.values() if not transfer_succeeded(t.get("state"))
         )
-        succeeded = sum(1 for t in transfers.values() if transfer_succeeded(t.get("state")))
-        failed = [t for t in transfers.values() if transfer_failed(t.get("state"))]
-
-        now = utcnow()
-        progressed = bytes_done > dl.bytes_done or succeeded > dl.files_done
-        phase = transfer_phase(transfers)
-        if phase == "queued" and time.monotonic() >= next_position_check:
+        counts = summary(states)
+        progressed = bytes_done > dl.bytes_done or counts[DONE] > dl.files_done
+        phase = transfer_phase(live)
+        if phase != "active" and time.monotonic() >= next_position_check:
             next_position_check = time.monotonic() + POSITION_INTERVAL
-            dl.queue_position = await _queue_position(dl, transfers)
+            dl.queue_position = await _queue_position(dl, live)
         clocks, timed_out = check_timeouts(dl, phase, progressed, now, settings)
-        state = "transferring" if bytes_done else dl.state
-        _save(dl, **{"bytes_done": bytes_done, "files_done": succeeded, "state": state,
-                     "queue_position": dl.queue_position, **clocks})
+        state = "transferring" if bytes_done else ("enqueued" if dl.state == "queued" else dl.state)
+        _save(dl, **{
+            "bytes_done": bytes_done, "files_done": counts[DONE], "state": state, "queue_position": dl.queue_position,
+            "file_states": copy.deepcopy(states), "window_files": window.files, "window_bytes": window.bytes,
+            "chunked": dl.chunked, "batch_id": dl.batch_id, **clocks,
+        })
 
-        if failed:
-            await _cancel_unfinished(dl, transfers)
-            first = failed[0]
-            reason = ", ".join(sorted(state_flags(first.get("state")) - {"Completed"}))
-            raise JobFailed(
-                f"{len(failed)} file(s) failed ({reason}), e.g. {split_path(first['filename'])[-1]}"
-                + (f": {first['exception']}" if first.get("exception") else "")
-            )
-        if succeeded == len(wanted):
-            _save(dl, state="completed", finished_at=now)
-            log_event(job.id, dl.rg_mbid, f"Download complete: {succeeded} files from {dl.username}")
-            return
+        if counts[DONE] == len(states):
+            _save(dl, state="completed", finished_at=now, error=None)
+            log_event(job.id, dl.rg_mbid, f"Download complete: {counts[DONE]} files from {dl.username}")
+            return "completed"
+        if not any(st["status"] in UNFINISHED for st in states.values()):
+            failed = [split_path(n)[-1] for n, st in states.items() if st["status"] == FAILED]
+            message = f"{len(failed)} of {len(states)} files could not be fetched: {', '.join(failed[:5])}"
+            _save(dl, state="partial", finished_at=now, error=message)
+            log_event(job.id, dl.rg_mbid, f"Download incomplete: {message}")
+            return "partial"
         if timed_out:
             await _cancel_unfinished(dl, transfers)
             raise JobFailed(timed_out)
         await asyncio.sleep(POLL_INTERVAL)
+
+
+def retry_failed_files(download_id: int) -> Download | None:
+    """Give a partial download's failed files a fresh set of retries."""
+    with session() as s:
+        dl = s.get(Download, download_id)
+        if dl is None or dl.state != "partial":
+            return None
+        states = copy.deepcopy(dl.file_states or {})
+    for st in states.values():
+        if st["status"] == FAILED:
+            st.update(status=PENDING, tries=0, not_before=None)
+    job = worker.enqueue("download", {"download_id": dl.id}, rg_mbid=dl.rg_mbid)
+    _save(dl, file_states=states, state="transferring", error=None, finished_at=None, job_id=job.id,
+          queued_since=utcnow(), last_progress_at=None)
+    return dl
 
 
 async def _queue_position(dl: Download, transfers: dict[str, dict]) -> int | None:
