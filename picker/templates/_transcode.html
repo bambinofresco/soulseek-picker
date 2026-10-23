@@ -1,0 +1,21 @@
+{#- The spectrum verdict from audio.transcode_check (imp.transcode). -#}
+{% set tc = imp.transcode %}
+{% if tc %}
+  {% set album = tc.album %}
+  {% if album.kind == "lossy" %}
+    <p class="banner warn"><strong>Possible transcode.</strong> The {{ album.detail }}.
+      Some masterings are band-limited on purpose, so check the spectrograms below before deciding.</p>
+  {% elif album.kind == "upsampled" %}
+    <p class="banner warn"><strong>Possibly upsampled.</strong> {{ album.detail }}.</p>
+  {% elif album.kind == "full" %}
+    <p class="small"><span class="badge ok">full-range spectrum</span>
+      <span class="muted">no lossy low-pass found in the {{ tc.files|length }} track{{ "s" if tc.files|length != 1 }} checked</span></p>
+  {% else %}
+    <p class="small muted">Spectrum check: {{ album.detail }}.</p>
+  {% endif %}
+  {% if album.kind in ("lossy", "upsampled") or tc.files|selectattr("kind", "equalto", "unknown")|list %}
+  <table class="grid small transcode">
+    {% for f in tc.files %}<tr><td>{{ f.name }}</td><td class="{{ 'warn-text' if f.kind in ('lossy', 'upsampled') else 'muted' }}">{{ f.kind }}</td><td class="muted">{{ f.detail }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+{% endif %}

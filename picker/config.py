@@ -72,6 +72,8 @@ class Settings(BaseModel):
     chunk_files: int = 20  # big folders are requested in chunks of at most this many files...
     chunk_mb: int = 150  # ...and this many megabytes
     download_scans: bool = False
+    transcode_check: bool = True  # spectrum analysis of two tracks before Review
+    cutoff_db: int = 30  # how sharp a spectrum cliff must be to count as a lossy low-pass
     max_sidecar_mb: int = 15
 
     @field_validator("album_folder_template")

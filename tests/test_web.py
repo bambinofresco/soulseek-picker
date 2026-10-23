@@ -313,3 +313,27 @@ def test_review_page_offers_redownload_after_a_failed_check(client, with_edition
     assert "Re-download failed tracks" in html and "already tried 1 time" in html
     assert f'action="/imports/{imp.id}/retry"' in html and "Checks the folder again" in html
     assert "Check failed: review" in client.get("/downloads").text
+
+
+@pytest.mark.parametrize("kind, expect, history", [
+    ("lossy", "Possible transcode.", "transcode?"),
+    ("upsampled", "Possibly upsampled.", "upsampled?"),
+    ("full", "full-range spectrum", None),
+])
+def test_review_page_shows_the_spectrum_check(client, with_editions, kind, expect, history):
+    from picker.models import Import
+    seed()
+    detail = {"lossy": "spectrum ends at 16.0 kHz (62 dB cliff), consistent with a ~128 kbps lossy source",
+              "upsampled": "96 kHz file with no content above ~22 kHz: probably upsampled from 44.1/48 kHz",
+              "full": "energy continues to the top of the spectrum"}[kind]
+    verdict = {"kind": kind, "cutoff_hz": 16000 if kind == "lossy" else None, "drop_db": None, "detail": detail}
+    with session() as s:
+        imp = Import(rg_mbid="rg-1", release_mbid="jp-cd", username="u", state="review", step="review",
+                     transcode={"album": verdict, "files": [{"name": "01.flac", **verdict}, {"name": "07.flac", **verdict}]})
+        s.add(imp)
+        s.commit()
+        s.refresh(imp)
+    html = client.get(f"/imports/{imp.id}").text
+    assert expect in html and "Spectrum check" in html
+    if history:
+        assert history in client.get("/history").text

@@ -325,6 +325,12 @@ async def _verify(imp: Import, settings: Settings) -> None:
     _save(imp, spectrograms=names)
     if error:
         _note(imp, f"No spectrogram: {error}")
+    if settings.transcode_check:
+        # A warning for the Review page, never a reject: some masterings are band-limited.
+        transcode = await audio.transcode_check(results, picks, settings.cutoff_db)
+        _save(imp, transcode=transcode)
+        if transcode["album"]["kind"] in ("lossy", "upsampled"):
+            log_event(imp.job_id, imp.rg_mbid, f"Possible transcode: {transcode['album']['detail']}")
 
 
 async def _artist_dir(imp: Import, album: Album, settings: Settings) -> Path:

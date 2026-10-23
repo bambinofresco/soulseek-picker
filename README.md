@@ -111,6 +111,15 @@ The one interaction: slskd refuses to enqueue a file that's already in flight fr
 - **Stall timeout** (default 30 min): counts only once bytes have started flowing and then stop.
 - **Give up and try next candidate**: stops the current folder now and starts the next-best one for the same edition.
 
+**Transcode check.** A FLAC made from an MP3 or AAC decodes perfectly, so `flac -t` can't catch it. Lossy encoders cut everything above a low-pass frequency (around 16 kHz at 128 kbps, 19 kHz at 192, about 20 kHz at 256–320), and that shows up as a cliff in the spectrum, whereas real recordings fade out gradually.
+
+Before Review, the picker analyses the two tracks it draws spectrograms for. It decodes three 10-second stretches of each with ffmpeg and checks where the spectrum ends:
+- **Possible transcode**: a cliff, reported with its frequency and what bitrate it's consistent with.
+- **Possibly upsampled**: a 96 kHz file with nothing above about 22 kHz.
+- **Full-range**: no cliff.
+
+Steep drops above about 21 kHz on CD audio are the recording's own anti-alias filter and count as full-range. Some masterings are genuinely band-limited (old tape, some early digital), so this is a warning on the Review page and in History, never a reject. The spectrograms sit right below it for a second look. It can be turned off with `transcode_check`, and `cutoff_db` sets how sharp a cliff must be (default 30 dB).
+
 **Damaged files.** Soulseek has no file hashes, so a transfer damaged on the way can still finish as "Completed, Succeeded". In one real case, a burst of 44 garbled bytes in the middle of a track got past TCP's checksum somewhere between the uploader and the VPN exit. The import's integrity check (`flac -t`, plus a mutagen read) is what catches this.
 
 When files fail it, the picker deletes the damaged copies and downloads just those files again, once, automatically. It then checks the whole folder again. If they fail a second time, the Review page offers:

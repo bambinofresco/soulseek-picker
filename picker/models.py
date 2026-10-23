@@ -142,6 +142,7 @@ class Import(SQLModel, table=True):
     force: bool = False  # rerun beets with the strong_rec_thresh overlay
     integrity: list = json_field(list)  # per file: {"name", "ok", "detail"}
     spectrograms: list = json_field(list)  # file names under spectrogram_dir/<id>/
+    transcode: dict | None = Field(default=None, sa_column=Column(JSON))  # audio.transcode_check
     beets_output: str | None = None
     tags: dict | None = Field(default=None, sa_column=Column(JSON))  # audio.tag_snapshot after beets
     notes: list = json_field(list)  # human-readable warnings for History

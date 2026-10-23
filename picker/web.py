@@ -535,7 +535,7 @@ FORM_SECTIONS = {
     "Search": ["search_timeout", "search_response_limit", "search_file_limit", "min_flac_folders"],
     "Preferences": [
         "flac_only", "prefer_original", "auto_import", "stuck_days", "stall_timeout_minutes", "queue_timeout_hours",
-        "download_scans", "max_sidecar_mb",
+        "download_scans", "max_sidecar_mb", "transcode_check", "cutoff_db",
     ],
     "Lidarr defaults for new artists": [
         "lidarr_root_folder", "lidarr_quality_profile_id", "lidarr_metadata_profile_id",

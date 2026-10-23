@@ -54,6 +54,13 @@
   </div>
 </section>
 
+{% if imp.transcode %}
+<section>
+  <h2>Spectrum check</h2>
+  {% include "_transcode.html" %}
+</section>
+{% endif %}
+
 {% if imp.spectrograms %}
 <section>
   <h2>Spectrograms</h2>

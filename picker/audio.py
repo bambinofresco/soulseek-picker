@@ -51,7 +51,8 @@ async def check_file(path: Path) -> dict:
     if info is None:
         return {"name": name, "path": str(path), "ok": False, "detail": "unreadable: unknown format"}
     length = getattr(info.info, "length", None)
-    return {"name": name, "path": str(path), "ok": True, "detail": f"{length:.0f} s" if length else "ok", "length": length}
+    rate = getattr(info.info, "sample_rate", None)
+    return {"name": name, "path": str(path), "ok": True, "detail": f"{length:.0f} s" if length else "ok", "length": length, "rate": rate}
 
 
 async def verify(root: Path, expected_count: int) -> tuple[bool, list[dict], str | None]:
@@ -66,6 +67,26 @@ async def verify(root: Path, expected_count: int) -> tuple[bool, list[dict], str
     if bad:
         return False, results, f"{len(bad)} file(s) failed the integrity check, e.g. {bad[0]['name']}: {bad[0]['detail']}"
     return True, results, None
+
+
+async def transcode_check(results: list[dict], picks: list[Path], cutoff_db: float) -> dict:
+    """Spectrum verdict for the picked tracks (the spectrogram ones) and for the album.
+
+    Never raises: a missing ffmpeg or an odd file becomes an "unknown" verdict with the reason.
+    """
+    from . import spectrum  # numpy is only needed here
+
+    info = {r["name"]: r for r in results}
+    files = []
+    for path in picks:
+        r = info.get(path.name, {})
+        try:
+            v = await spectrum.analyse_file(str(path), int(r.get("rate") or 44100), float(r.get("length") or 0), cutoff_db)
+        except Exception as exc:  # noqa: BLE001 - a failed analysis must not stop the import
+            v = spectrum.Verdict("unknown", None, None, f"could not analyse: {exc}")
+        files.append({"name": path.name, **v.to_dict()})
+    album = spectrum.combine([spectrum.Verdict(f["kind"], f["cutoff_hz"], f["drop_db"], f["detail"]) for f in files])
+    return {"album": album.to_dict(), "files": files}
 
 
 EDITION_TAGS = [

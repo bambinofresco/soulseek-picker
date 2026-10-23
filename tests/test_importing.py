@@ -437,3 +437,42 @@ async def test_without_scanners_the_import_says_so(env):
     imp = await run(importing.approve(imp))
     assert imp.state == "imported"
     assert any("Neither autoscan nor Plex is configured" in n for n in imp.notes)
+
+
+# Transcode detection in the pipeline -----------------------------------------------------------
+
+async def test_possible_transcode_is_reported_but_never_blocks(env, monkeypatch):
+    from picker import spectrum
+    settings, *_ = env
+
+    async def fake(path, rate, length, cutoff_db=30.0):
+        if path.endswith("01 Track.flac"):
+            return spectrum.Verdict("lossy", 16000, 62.0, "spectrum ends at 16.0 kHz (62 dB cliff), consistent with a ~128 kbps lossy source")
+        return spectrum.Verdict("full", None, None, "energy continues to the top of the spectrum")
+
+    monkeypatch.setattr(spectrum, "analyse_file", fake)
+    imp = await run(importing.start_import(landed_download(settings, job_id=40)))
+    assert imp.state == "review"  # a warning, not a reject
+    assert imp.transcode["album"]["kind"] == "lossy" and imp.transcode["album"]["cutoff_hz"] == 16000
+    assert len(imp.transcode["files"]) == 2  # the two spectrogram tracks
+
+
+async def test_failed_analysis_is_unknown_and_the_import_continues(env, monkeypatch):
+    from picker import spectrum
+    settings, *_ = env
+
+    async def broken(path, rate, length, cutoff_db=30.0):
+        raise RuntimeError("ffmpeg is not installed")
+
+    monkeypatch.setattr(spectrum, "analyse_file", broken)
+    imp = await run(importing.start_import(landed_download(settings, job_id=41)))
+    assert imp.state == "review"
+    assert imp.transcode["album"]["kind"] == "unknown"
+    assert "ffmpeg is not installed" in imp.transcode["files"][0]["detail"]
+
+
+async def test_transcode_check_can_be_turned_off(env):
+    settings, *_ = env
+    settings.transcode_check = False
+    imp = await run(importing.start_import(landed_download(settings, job_id=42)))
+    assert imp.state == "review" and imp.transcode is None
