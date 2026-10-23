@@ -355,3 +355,15 @@ def test_review_page_shows_the_chosen_edition_without_asking(client, with_editio
     assert '<details class="change-edition" >' in html or '<details class="change-edition">' in html  # collapsed
     assert "Waiting for you because the spectrum check suggests a transcode" in html
     assert 'action="/imports/' in html and "disabled" not in html.split("/import\"")[1][:80]  # Import is enabled
+
+
+def test_review_page_says_when_automatic_import_is_off(client, with_editions, settings):
+    from picker.models import Import
+    seed()
+    settings.auto_import = False
+    with session() as s:
+        imp = Import(rg_mbid="rg-1", release_mbid="jp-cd", username="u", state="review", step="review")
+        s.add(imp)
+        s.commit()
+        s.refresh(imp)
+    assert "automatic import is off" in client.get(f"/imports/{imp.id}").text

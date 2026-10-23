@@ -148,7 +148,13 @@ def save_settings(updates: dict) -> Settings:
         if name in Settings.model_fields and name not in locked:
             stored[name] = value
     # Validate before writing so a bad value never lands on disk.
-    Settings.model_validate({**current.model_dump(), **stored})
+    validated = Settings.model_validate({**current.model_dump(), **stored})
+    # Keep only values that differ from the defaults: the Settings form submits every field,
+    # and storing untouched ones would freeze today's defaults over future improvements.
+    for name in list(stored):
+        field = Settings.model_fields.get(name)
+        if field is not None and getattr(validated, name) == field.default:
+            del stored[name]
     yaml_path.parent.mkdir(parents=True, exist_ok=True)
     yaml_path.write_text(yaml.safe_dump(stored, sort_keys=True), encoding="utf-8")
     _settings = load_settings()

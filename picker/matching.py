@@ -234,12 +234,14 @@ def _tier(names: set[str], tracks_agree: bool) -> str:
     if not tracks_agree:
         # A track-count mismatch caps the tier at Low.
         return "Low" if positive else "Unknown"
-    if names & {"catalog", "barcode"}:
-        return "Exact"
-    # Contradictions. Remaster mismatches only lower the score: they are how an original
-    # and its remaster are told apart, not proof the folder is something else.
+    # Contradictions cap the tier, even with a matching catalog number: labels reuse one
+    # number across formats (a WEB folder tagged AKR134 is not the AKR134 cassette when the
+    # digital release has no catalog number). Remaster mismatches only lower the score:
+    # they are how an original and its remaster are told apart.
     if names & {"source_conflict", "durations_bad"}:
         return "Low"
+    if names & {"catalog", "barcode"}:
+        return "Exact"
     if "durations" in names and names & {"year", "label", "source"}:
         return "High"
     if positive - {"tracks"}:

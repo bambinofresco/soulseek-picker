@@ -34,3 +34,21 @@ def test_cli_module_imports():
 def test_unknown_template_tokens_are_rejected():
     with pytest.raises(ValueError, match="Bogus"):
         config.Settings(album_folder_template="{Album Title} {Bogus}")
+
+
+def test_saving_the_form_stores_only_values_that_differ_from_the_defaults(monkeypatch, tmp_path):
+    """The Settings form submits every field; untouched ones must not freeze today's defaults."""
+    import yaml
+    monkeypatch.setenv("CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "_settings", None)
+    defaults = config.Settings()
+    form = {name: getattr(defaults, name) for name in ("auto_import", "stall_timeout_minutes", "flac_only")}
+    form["autoscan_url"] = "http://192.168.0.164:3030"
+    config.save_settings(form)
+    stored = yaml.safe_load((tmp_path / "picker.yaml").read_text())
+    assert stored == {"autoscan_url": "http://192.168.0.164:3030"}
+    # A real choice that differs from the default is kept, and dropped again once it matches.
+    config.save_settings({"auto_import": False})
+    assert yaml.safe_load((tmp_path / "picker.yaml").read_text())["auto_import"] is False
+    config.save_settings({"auto_import": True})
+    assert "auto_import" not in yaml.safe_load((tmp_path / "picker.yaml").read_text())

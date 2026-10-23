@@ -12,7 +12,9 @@
 {% if active %}<p class="progress-line" hx-get="/imports/{{ imp.id }}" hx-trigger="every 3s" hx-select="main" hx-target="main" hx-swap="outerHTML"><span class="spinner"></span> Working…</p>{% endif %}
 
 <section class="card review">
-  {% if imp.state == "review" and hold and hold != "auto_import is off" %}
+  {% if imp.state == "review" and hold == "auto_import is off" %}
+    <p class="small muted">Waiting for you because automatic import is off (Settings → Preferences → <span class="mono">auto_import</span>). Every check passed.</p>
+  {% elif imp.state == "review" and hold %}
     <p class="small muted">Waiting for you because {{ hold }}.</p>
   {% endif %}
   <h2>Importing as</h2>

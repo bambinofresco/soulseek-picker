@@ -177,3 +177,28 @@ def test_edition_from_release_reads_recording_lengths_and_discids():
     assert e.lengths[0][0] == 1.5
     assert e.disc_ids == [["abc-"]]
     assert e.catalog_numbers == []  # empty catalog number dropped
+
+
+def test_a_shared_catalog_number_does_not_beat_the_right_format():
+    """Sufjan Stevens, The Greatest Gift: the WEB folder tagged [AKR134] is the digital release
+    (no catalog number in MusicBrainz), not the AKR134 cassette or CD."""
+    lengths = [412, 328, 248, 257, 121, 111, 327, 204, 408, 244, 134, 112]
+    eds = editions_from_releases([
+        release("digital", "2017-11-24", "XW", fmt="Digital Media", label="Asthmatic Kitty Records", cat="", lengths=lengths),
+        release("cassette", "2017-11-24", "US", fmt="Cassette", label="Asthmatic Kitty Records", cat="AKR134", lengths=lengths),
+        release("vinyl", "2017-12-08", "US", fmt='12" Vinyl', label="Asthmatic Kitty Records", cat="AKR134LP", lengths=lengths),
+        release("cd", "2018-11-16", "US", fmt="CD", label="Asthmatic Kitty Records", cat="AKR134", lengths=lengths),
+    ])
+    path = r"@@ibnde\AUDIOGALORE\Backlog\Sufjan Stevens - The Greatest Gift Mixtape (2017) [AKR134] [WEB FLAC]"
+    files = [{"filename": rf"{path}\{i:02d}.flac", "kind": "audio", "disc": None, "length": n, "size": 1}
+             for i, n in enumerate(lengths, 1)]
+    parsed = parse_candidate([f["filename"] for f in files], files=files, artist="Sufjan Stevens",
+                             album="The Greatest Gift", labels=["Asthmatic Kitty Records"]).to_dict()
+    assert parsed["source"] == "WEB" and parsed["catalog_numbers"] == ["AKR134"]
+    result = match_candidate(files, parsed, eds)
+    assert result.editions == ["digital"]
+    assert result.tier == "High"  # tracks, lengths, year and source agree
+
+    # The same folder ripped from CD still matches the CD/cassette catalog number exactly.
+    cd_parsed = {**parsed, "source": "CD"}
+    assert match_candidate(files, cd_parsed, eds).tier == "Exact"
