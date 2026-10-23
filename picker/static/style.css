@@ -251,3 +251,6 @@ table.candidates tbody.cand-group.open td.actions, table.candidates tr.cand:hove
 table.downloads .folder-name { overflow-wrap: anywhere; }
 table.downloads progress { width: 100%; max-width: 140px; }
 table.downloads td.actions form { margin: 2px 0; }
+details.change-edition { margin: 4px 0 8px; }
+details.change-edition summary { cursor: pointer; color: var(--accent); }
+details.change-edition form { margin-top: 6px; }

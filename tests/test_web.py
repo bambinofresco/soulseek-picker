@@ -337,3 +337,21 @@ def test_review_page_shows_the_spectrum_check(client, with_editions, kind, expec
     assert expect in html and "Spectrum check" in html
     if history:
         assert history in client.get("/history").text
+
+
+def test_review_page_shows_the_chosen_edition_without_asking(client, with_editions, settings):
+    from picker.models import Import
+    seed()
+    settings.auto_import = True
+    with session() as s:
+        imp = Import(rg_mbid="rg-1", release_mbid="jp-cd", username="u", state="review", step="review",
+                     transcode={"album": {"kind": "lossy", "cutoff_hz": 16000, "drop_db": 60, "detail": "spectrum ends at 16.0 kHz"},
+                                "files": []})
+        s.add(imp)
+        s.commit()
+        s.refresh(imp)
+    html = client.get(f"/imports/{imp.id}").text
+    assert "Importing as" in html and "(chosen when you downloaded it)" in html
+    assert '<details class="change-edition" >' in html or '<details class="change-edition">' in html  # collapsed
+    assert "Waiting for you because the spectrum check suggests a transcode" in html
+    assert 'action="/imports/' in html and "disabled" not in html.split("/import\"")[1][:80]  # Import is enabled

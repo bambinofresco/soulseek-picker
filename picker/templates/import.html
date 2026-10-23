@@ -12,21 +12,28 @@
 {% if active %}<p class="progress-line" hx-get="/imports/{{ imp.id }}" hx-trigger="every 3s" hx-select="main" hx-target="main" hx-swap="outerHTML"><span class="spinner"></span> Working…</p>{% endif %}
 
 <section class="card review">
-  <h2>Edition</h2>
+  {% if imp.state == "review" and hold and hold != "auto_import is off" %}
+    <p class="small muted">Waiting for you because {{ hold }}.</p>
+  {% endif %}
+  <h2>Importing as</h2>
   {% if edition %}
-    <p><a href="https://musicbrainz.org/release/{{ edition.id }}" target="_blank" rel="noopener">{{ edition|edition }}</a></p>
+    <p><a href="https://musicbrainz.org/release/{{ edition.id }}" target="_blank" rel="noopener">{{ edition|edition }}</a>
+      <span class="small muted">(chosen when you downloaded it)</span></p>
   {% elif imp.release_mbid %}
     <p class="mono">{{ imp.release_mbid }}</p>
   {% else %}
-    <p class="banner warn">No edition chosen yet. Pick one below before importing.</p>
+    <p class="banner warn">No edition was chosen for this download. Pick one below.</p>
   {% endif %}
   {% if imp.state in ("review", "skipped", "blocked", "failed") and editions %}
-  <form method="post" action="/imports/{{ imp.id }}/edition" class="inline-form">
-    <select name="release_mbid">
-      {% for e in editions %}<option value="{{ e.id }}" {% if e.id == imp.release_mbid %}selected{% endif %}>{% if e.id in likely %}✓ {% endif %}{{ e|edition }}</option>{% endfor %}
-    </select>
-    <button type="submit">Change edition</button>
-  </form>
+  <details class="change-edition" {% if not imp.release_mbid %}open{% endif %}>
+    <summary class="small">{% if imp.release_mbid %}Change…{% else %}Choose the edition{% endif %}</summary>
+    <form method="post" action="/imports/{{ imp.id }}/edition" class="inline-form">
+      <select name="release_mbid">
+        {% for e in editions %}<option value="{{ e.id }}" {% if e.id == imp.release_mbid %}selected{% endif %}>{% if e.id in likely %}✓ {% endif %}{{ e|edition }}</option>{% endfor %}
+      </select>
+      <button type="submit">{% if imp.release_mbid %}Change edition{% else %}Use this edition{% endif %}</button>
+    </form>
+  </details>
   {% endif %}
 
   <div class="actions-row">
