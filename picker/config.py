@@ -59,11 +59,15 @@ class Settings(BaseModel):
     search_response_limit: int = 500
     search_file_limit: int = 20000
     min_flac_folders: int = 5
+    # slskd only returns results once a search ends: stop once there is enough to show.
+    search_quick_seconds: int = 10  # stop after this long...
+    search_quick_responses: int = 25  # ...if this many users have answered
+    search_max_seconds: int = 45  # and in any case after this long
 
     # Preferences
     flac_only: bool = True
     prefer_original: bool = True
-    auto_import: bool = False
+    auto_import: bool = True  # import straight away when every check passes; otherwise wait on Review
     stuck_days: int = 3
     stall_timeout_minutes: int = 30  # bytes started flowing, then stopped
     queue_timeout_hours: int = 6  # waiting in the uploader's queue

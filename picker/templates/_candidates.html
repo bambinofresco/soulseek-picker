@@ -15,8 +15,12 @@
     <button hx-post="/album/{{ rg_mbid }}/search" hx-target="#candidates" hx-swap="outerHTML">
       {% if search %}Search again{% else %}Search Soulseek{% endif %}
     </button>
-    {% endif %}
     {% if search and search.state == "done" %}
+    <button hx-post="/album/{{ rg_mbid }}/search-more" hx-target="#candidates" hx-swap="outerHTML"
+            title="Search for longer (up to 3 minutes); new folders join this table">Search more</button>
+    {% endif %}
+    {% endif %}
+    {% if candidates %}
     <form class="filters" hx-get="/album/{{ rg_mbid }}/candidates" hx-target="#candidates" hx-swap="outerHTML" hx-trigger="change">
       {% if params.all %}<input type="hidden" name="all" value="true">{% endif %}
       {% if params.sort %}<input type="hidden" name="sort" value="{{ params.sort }}">{% endif %}
@@ -43,7 +47,7 @@
 
   <div id="candidates-status">{% include "_candidates_status.html" %}</div>
 
-  {% if search and search.state == "done" and candidates %}
+  {% if candidates %}
   <div class="table-wrap">
   <table class="grid candidates">
     <thead>

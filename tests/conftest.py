@@ -16,6 +16,7 @@ def settings(tmp_path, monkeypatch):
         music_dir=tmp_path / "music",
         slskd_api_key="test",
         stall_timeout_minutes=30,
+        auto_import=False,  # tests opt in to automatic import explicitly
     )
     s.config_dir.mkdir()
     monkeypatch.setattr(config, "_settings", s)

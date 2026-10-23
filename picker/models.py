@@ -57,6 +57,8 @@ class Search(SQLModel, table=True):
     response_count: int = 0
     file_count: int = 0
     error: str | None = None
+    stopped_early: bool | None = None  # stopped once it had enough to show (searching.py)
+    deep: bool | None = None  # a "Search more" pass is running
     created_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None
 

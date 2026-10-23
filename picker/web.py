@@ -7,7 +7,7 @@ import hashlib
 import json
 from html import escape
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -25,7 +25,7 @@ from .clients.musicbrainz import parse_mb_url
 from .config import SECRET_FIELDS, Settings, env_locked, get_settings, save_settings
 from .db import session
 from .downloading import downloads_for_search, request_give_up, retry_failed_files, start_download
-from .models import Album, Candidate, Download, Import, Job, JobEvent, Search
+from .models import Album, Candidate, Download, Import, Job, JobEvent, Search, utcnow
 from .editions import Edition
 from .matching import completeness, rip_quality
 from .transfers import summary as transfer_summary
@@ -36,6 +36,7 @@ from .searching import (
     ordered_candidates,
     parsed,
     quality,
+    search_more,
     start_search,
 )
 
@@ -44,6 +45,7 @@ router = APIRouter()
 
 ACTIVE_SEARCH = {"queued", "searching"}
 ACTIVE_DOWNLOAD = {"queued", "enqueued", "transferring"}
+RESEARCH_AFTER = timedelta(minutes=10)  # Pick reuses a search younger than this
 
 
 # Template filters
@@ -131,7 +133,7 @@ async def album_search(request: Request, artist: str = "", album: str = ""):
                 rg_mbid = await albums.resolve_mb_url(*parsed)
             except ServiceError as exc:
                 return render(request, "search_results.html", artist=artist, album=album, results=[], error=exc.message)
-            return RedirectResponse(f"/album/{rg_mbid}", status_code=303)
+            return RedirectResponse(f"/album/{rg_mbid}?search=1", status_code=303)
     results, error = [], None
     try:
         results = await services().mb.search_release_groups(artist, album)
@@ -145,11 +147,18 @@ async def album_search(request: Request, artist: str = "", album: str = ""):
 # Album page
 
 @router.get("/album/{rg_mbid}", response_class=HTMLResponse)
-async def album_page(request: Request, rg_mbid: str):
+async def album_page(request: Request, rg_mbid: str, search: bool = False):
     try:
         album = await albums.ensure_album(rg_mbid)
     except ServiceError as exc:
         return render(request, "error.html", message=f"Could not load this album from MusicBrainz: {exc.message}")
+    if search:
+        # Pick: search Soulseek straight away, unless a search is running or has just finished.
+        latest = latest_search(rg_mbid)
+        recent = latest and latest.finished_at and utcnow() - latest.finished_at < RESEARCH_AFTER
+        if not latest or not (latest.state in ACTIVE_SEARCH or recent):
+            start_search(rg_mbid)
+        return RedirectResponse(f"/album/{rg_mbid}", status_code=303)  # a refresh doesn't search again
     return render(request, "album.html", album=album, search=latest_search(rg_mbid))
 
 
@@ -228,7 +237,7 @@ async def _candidates_context(rg_mbid: str, params: dict, *, with_editions: bool
 
     if not search:
         phase = "none"
-    elif searching_now or search.state == "failed":
+    elif search.state == "failed" or (searching_now and not candidates):
         phase = search.state
     else:
         phase = "rows" if candidates else "empty"
@@ -253,6 +262,15 @@ async def _candidates_context(rg_mbid: str, params: dict, *, with_editions: bool
 
 def _params(all: bool, source: str, depth: str, sort: str, rev: bool) -> dict:
     return {"all": all, "source": source, "depth": depth, "sort": sort, "rev": rev}
+
+
+@router.post("/album/{rg_mbid}/search-more", response_class=HTMLResponse)
+async def album_search_more(request: Request, rg_mbid: str):
+    """A longer search for the same album; new folders join the table."""
+    search = latest_search(rg_mbid)
+    if search and search.state not in ACTIVE_SEARCH:
+        search_more(search)
+    return await album_candidates(request, rg_mbid)
 
 
 @router.get("/album/{rg_mbid}/candidates", response_class=HTMLResponse)
@@ -532,7 +550,8 @@ FORM_SECTIONS = {
     "Plex": ["plex_url", "plex_token", "plex_section_id", "plex_music_path"],
     "autoscan": ["autoscan_url", "autoscan_username", "autoscan_password"],
     "MusicBrainz": ["mb_contact"],
-    "Search": ["search_timeout", "search_response_limit", "search_file_limit", "min_flac_folders"],
+    "Search": ["search_timeout", "search_response_limit", "search_file_limit", "min_flac_folders",
+               "search_quick_seconds", "search_quick_responses", "search_max_seconds"],
     "Preferences": [
         "flac_only", "prefer_original", "auto_import", "stuck_days", "stall_timeout_minutes", "queue_timeout_hours",
         "download_scans", "max_sidecar_mb", "transcode_check", "cutoff_db",

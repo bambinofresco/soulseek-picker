@@ -105,6 +105,26 @@ The picker's downloads go to `picker/<job>/` (one batch per disc folder) and its
 
 The one interaction: slskd refuses to enqueue a file that's already in flight from the same user. If Lidarr and the picker grab the same folder from the same user at the same moment, the second enqueue fails. The picker reports it on the album's event log.
 
+## Searching
+
+- **Pick** (from search results, Stuck in Lidarr, or a pasted MusicBrainz link) starts the Soulseek search straight away. A search that is running or finished in the last 10 minutes is reused.
+- slskd only hands out a search's results once the search has ended, and a search keeps going while responses trickle in, which can take a minute or more. So the picker stops the search once it has enough to show, then shows the folders:
+  - `search_quick_seconds` (10) and `search_quick_responses` (25): stop once both have passed
+  - `search_max_seconds` (45): stop in any case
+
+  The status line says when a search was stopped early.
+- **Search more** searches the same album again for up to 3 minutes and merges new folders into the table. Rows already there keep their log results and downloads.
+- MusicBrainz editions load while slskd searches, instead of before.
+
+## Importing automatically
+
+`auto_import` is on by default. A download imports straight away when it passes every check:
+- the integrity check
+- the spectrum check, which must find no sign of a transcode or upsampling, and must actually have run
+- an edition was chosen
+
+Anything else waits on the Review page, and the album's event log says why ("waiting for review (the spectrum check suggests a transcode)"). Turn `auto_import` off to review every download.
+
 ## Downloads: queue and stall timeouts
 
 - **Queue timeout** (default 6 h): time allowed waiting in an uploader's queue. The Downloads page shows the live queue position and how long it has waited.

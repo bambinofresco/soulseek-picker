@@ -268,11 +268,51 @@ async def test_beets_skip_then_force(env, monkeypatch):
     assert "strong_rec_thresh: 1.01" in (settings.beets_dir / "force.yaml").read_text()
 
 
-async def test_auto_import_runs_straight_through(env):
+def _spectrum(monkeypatch, kind="full", error=None):
+    from picker import spectrum
+
+    async def fake(path, rate, length, cutoff_db=30.0):
+        if error:
+            raise RuntimeError(error)
+        detail = {"full": "energy continues to the top of the spectrum",
+                  "lossy": "spectrum ends at 16.0 kHz (62 dB cliff), consistent with a ~128 kbps lossy source"}[kind]
+        return spectrum.Verdict(kind, 16000 if kind == "lossy" else None, None, detail)
+
+    monkeypatch.setattr(spectrum, "analyse_file", fake)
+
+
+async def test_auto_import_goes_straight_in_when_every_check_passes(env, monkeypatch):
     settings, *_ = env
     settings.auto_import = True
+    _spectrum(monkeypatch, "full")
     imp = await run(importing.start_import(landed_download(settings, job_id=12)))
     assert imp.state == "imported"
+
+
+@pytest.mark.parametrize("setup, reason", [
+    (lambda mp, imp_kw: _spectrum(mp, "lossy"), "suggests a transcode"),
+    (lambda mp, imp_kw: _spectrum(mp, error="ffmpeg is not installed"), "could not run"),
+    (lambda mp, imp_kw: (_spectrum(mp, "full"), imp_kw.update(release=None)), "no edition chosen"),
+])
+async def test_auto_import_waits_for_review_when_a_check_does_not_pass(env, monkeypatch, setup, reason):
+    settings, *_ = env
+    settings.auto_import = True
+    kw = {"release": REL}
+    setup(monkeypatch, kw)
+    dl = landed_download(settings, job_id=13)
+    if kw["release"] is None:
+        with session() as s:
+            row = s.get(Download, dl.id)
+            row.release_mbid = None
+            s.add(row)
+            s.commit()
+            dl = row
+    imp = await run(importing.start_import(dl))
+    assert imp.state == "review"
+    with session() as s:
+        from picker.models import JobEvent
+        events = [e.message for e in s.exec(select(JobEvent)).all()]
+    assert any(reason in e for e in events), events
 
 
 def test_names_and_paths(settings):

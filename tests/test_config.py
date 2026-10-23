@@ -11,7 +11,7 @@ def test_defaults_match_the_unraid_layout(monkeypatch, tmp_path):
     assert s.lidarr_root_folder == "/mediadata/media/music"
     assert s.album_folder_template == "{Album Title} ({Release Year})"
     assert s.plex_music_path == ""  # identity mapping
-    assert s.auto_import is False
+    assert s.auto_import is True  # imports by itself when every check passes
     assert (s.stall_timeout_minutes, s.queue_timeout_hours) == (30, 6)
 
 

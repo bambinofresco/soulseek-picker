@@ -3,7 +3,7 @@
 Steps, each recorded on the Import row so a restart resumes where it stopped:
 
     verify   file count, flac -t, mutagen; spectrograms for review
-    review   wait for Import / Change edition / Reject (skipped when auto_import is on)
+    review   wait for Import / Change edition / Reject (skipped when auto_import is on and every check passed)
     artist   make sure Lidarr has the artist; read its folder
     place    move the download to <artist folder>/<album folder>; never overwrite
     beets    tag in place, pinned to the chosen release
@@ -264,16 +264,38 @@ async def run_import(job: Job) -> None:
         raise
 
 
+def review_reason(imp: Import, settings: Settings) -> str | None:
+    """Why this import waits on the Review page instead of importing by itself (None: import now).
+
+    With auto_import on, only an import that passed every check goes straight in: the
+    integrity check (already required to get here), a spectrum check that found no lossy
+    low-pass or upsampling and actually ran, and a chosen edition.
+    """
+    if not settings.auto_import:
+        return "auto_import is off"
+    if not imp.release_mbid:
+        return "no edition chosen"
+    if settings.transcode_check:
+        verdict = ((imp.transcode or {}).get("album") or {})
+        kind = verdict.get("kind")
+        if kind in ("lossy", "upsampled"):
+            return "the spectrum check suggests a transcode" if kind == "lossy" else "the spectrum check suggests upsampling"
+        failed = [f for f in (imp.transcode or {}).get("files", []) if str(f.get("detail", "")).startswith("could not analyse")]
+        if kind is None or failed:
+            return "the spectrum check could not run"
+    return None
+
+
 async def _pipeline(imp: Import) -> None:
     settings = get_settings()
     if imp.step == "verify":
         await _verify(imp, settings)
-        if not settings.auto_import:
+        hold = review_reason(imp, settings)
+        if hold:
             _save(imp, step="review", state="review")
-            log_event(imp.job_id, imp.rg_mbid, "Downloaded and verified; waiting for review")
+            log_event(imp.job_id, imp.rg_mbid, f"Downloaded and verified; waiting for review ({hold})")
             return
-        if not imp.release_mbid:
-            raise Blocked("auto_import is on but no edition was chosen; choose one and press Import")
+        log_event(imp.job_id, imp.rg_mbid, "Passed every check; importing")
         _save(imp, step="artist", state="importing")
     if imp.step == "review":
         return

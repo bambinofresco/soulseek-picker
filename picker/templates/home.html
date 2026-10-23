@@ -23,7 +23,7 @@
     <tr>
       <td>{{ a.artist }} – {{ a.title }}</td>
       <td class="nowrap">{{ a.release_date }}</td>
-      <td>{% if a.rg_mbid %}<a class="button" href="/album/{{ a.rg_mbid }}">Pick</a>{% endif %}</td>
+      <td>{% if a.rg_mbid %}<a class="button" href="/album/{{ a.rg_mbid }}?search=1">Pick</a>{% endif %}</td>
     </tr>
     {% endfor %}
     </tbody>

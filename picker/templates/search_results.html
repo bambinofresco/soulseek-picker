@@ -14,7 +14,7 @@
       <td>{{ rg.artist_name }}</td>
       <td>{{ rg["primary-type"] or "" }}{% for t in rg.get("secondary-types", []) %} · {{ t }}{% endfor %}</td>
       <td>{{ rg["first-release-date"] or "" }}</td>
-      <td><a class="button" href="/album/{{ rg.id }}">Pick</a></td>
+      <td><a class="button" href="/album/{{ rg.id }}?search=1">Pick</a></td>
     </tr>
     {% endfor %}
     </tbody>

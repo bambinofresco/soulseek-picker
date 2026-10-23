@@ -26,7 +26,8 @@ class FakeSlskd:
         return sid
 
     async def get_search(self, sid):
-        return {"isComplete": True, "state": "Completed, TimedOut", "responseCount": 2, "fileCount": 20}
+        return {"isComplete": True, "state": "Completed, TimedOut", "responseCount": 2, "fileCount": 20,
+                "endedAt": "2026-10-23T10:00:00Z"}
 
     async def search_responses(self, sid):
         return self.results_by_query.get(self.searches[sid], [])
