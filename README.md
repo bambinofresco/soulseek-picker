@@ -189,6 +189,7 @@ Run these on the real stack after installing:
 Found by reading the tools' source or running them:
 
 - **beets `plugins` line:** in beets 2.x the MusicBrainz autotagger is a plugin, on by default. The spec's `plugins: fetchart` replaces the default list, so beets finds no candidates and skips every import. The generated config says `plugins: musicbrainz fetchart`, and the Settings page warns if `musicbrainz` goes missing.
+- **Tags the picker overwrites don't count.** Every import passes `/config/beets/pinned.yaml`, which gives zero weight to album-level tags already in the files: another pressing's MusicBrainz IDs, country, label, catalog number, year and media. The picker has already chosen the release, so beets only judges whether the files are its tracks (count, lengths, titles, artist, album). Without this, files tagged for the Australian pressing of an album scored 82.7% against the identical UK release and were skipped.
 - **Force apply:** beets applies a match only when `distance < strong_rec_thresh` (strictly, with distances from 0 to 1), so the spec's `1.0` still skips the worst case. Also, `max_rec` caps matches with missing or unmatched tracks at medium. The overlay uses `strong_rec_thresh: 1.01` and lifts those two caps. `-c` takes one file; the base config comes from `BEETSDIR=/config/beets`.
 - **slskd 0.26.1:**
   - `searchTimeout` is in milliseconds (the setting stays in seconds).

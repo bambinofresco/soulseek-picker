@@ -250,7 +250,7 @@ async def test_beets_skip_then_force(env, monkeypatch):
         calls.append(args)
         if args[0] == "ls" or args[2:3] == ["ls"]:
             return 0, str(settings.music_dir / "Radiohead" / "OK Computer (1997)") if state["in_library"] else ""
-        if "-c" in args:
+        if any(str(a).endswith("force.yaml") for a in args):
             state["in_library"] = True
             return 0, "Tagging: Radiohead - OK Computer"
         return 0, "Skipping."
@@ -263,7 +263,9 @@ async def test_beets_skip_then_force(env, monkeypatch):
 
     imp = await run(importing.force_apply(imp))
     assert imp.state == "imported"
-    forced = [a for a in calls if "-c" in a][0]
+    imports = [a for a in calls if "import" in a]
+    assert imports[0][1].endswith("pinned.yaml")  # every import ignores tags the picker overwrites
+    forced = [a for a in calls if any(str(x).endswith("force.yaml") for x in a)][0]
     assert forced[1].endswith("force.yaml") and "--search-id" in forced and REL in forced
     assert "strong_rec_thresh: 1.01" in (settings.beets_dir / "force.yaml").read_text()
 
@@ -516,3 +518,16 @@ async def test_transcode_check_can_be_turned_off(env):
     settings.transcode_check = False
     imp = await run(importing.start_import(landed_download(settings, job_id=42)))
     assert imp.state == "review" and imp.transcode is None
+
+
+def test_overlays_ignore_tags_the_picker_overwrites(settings):
+    import yaml
+    beets.ensure_config(settings)
+    pinned = yaml.safe_load((settings.beets_dir / "pinned.yaml").read_text())
+    force = yaml.safe_load((settings.beets_dir / "force.yaml").read_text())
+    for overlay in (pinned, force):
+        weights = overlay["match"]["distance_weights"]
+        assert weights["album_id"] == weights["track_id"] == weights["country"] == weights["label"] == 0
+        assert "track_length" not in weights and "track_title" not in weights  # still judged
+    assert force["match"]["strong_rec_thresh"] == 1.01
+    assert "strong_rec_thresh" not in pinned["match"]  # the base config's threshold applies

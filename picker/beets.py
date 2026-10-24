@@ -1,8 +1,9 @@
 """Run beets as a subprocess to tag an album folder in place, pinned to one release.
 
 beets reads its base config from $BEETSDIR/config.yaml (generated on first run, then
-yours to edit). `-c` takes a single file that beets layers on top of that base, which is
-how Force apply raises strong_rec_thresh without touching the base config.
+yours to edit). `-c` takes a single file that beets layers on top of that base: every import
+passes pinned.yaml (album-level tags the picker overwrites don't count against the match),
+and Force apply passes force.yaml (the same, plus accept any distance).
 
 In quiet mode beets *skips* an album whose match is not strong, even with --search-id.
 Rather than parse its output, the result is judged by asking the beets library whether
@@ -45,12 +46,32 @@ fetchart:
   auto: yes
 """
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+# Every import pins the release the picker chose (--search-id), so beets only has to judge
+# whether these files are that release's tracks: count, lengths, titles, artist, album.
+# Album-level tags already in the files (another pressing's MusicBrainz IDs, country, label,
+# catalog number, year) are about to be overwritten and must not count against the match.
+# Seen in practice: Neon Nights files tagged for the AU pressing scored 82.7% against the
+# identical GB release, every track length equal, and beets skipped it.
+PINNED_WEIGHTS = """\
+match:
+  distance_weights:
+    album_id: 0.0
+    track_id: 0.0
+    country: 0.0
+    label: 0.0
+    catalognum: 0.0
+    albumdisambig: 0.0
+    year: 0.0
+    media: 0.0
+    mediums: 0.0
+"""
+PINNED_OVERLAY = "# Written by the picker for every import (see picker/beets.py).\n" + PINNED_WEIGHTS
 FORCE_OVERLAY = """\
 # Written by the picker for Force apply: accept the pinned release whatever the distance.
 # beets tests distance < strong_rec_thresh strictly and distances run 0..1, so 1.0 would
 # still skip the worst case; and max_rec would cap a forced match with missing or
 # unmatched tracks at medium, which quiet mode also skips.
-match:
+""" + PINNED_WEIGHTS + """\
   strong_rec_thresh: 1.01
   max_rec:
     missing_tracks: strong
@@ -76,6 +97,7 @@ def ensure_config(settings: Settings) -> Path:
             BASE_CONFIG.format(music_dir=settings.music_dir.as_posix(), beets_dir=beets_dir.as_posix()),
             encoding="utf-8",
         )
+    (beets_dir / "pinned.yaml").write_text(PINNED_OVERLAY, encoding="utf-8")
     (beets_dir / "force.yaml").write_text(FORCE_OVERLAY, encoding="utf-8")
     return config
 
@@ -143,8 +165,8 @@ async def import_album(
     settings: Settings, album_dir: Path, release_mbid: str, *, force: bool = False, pretend: bool = False,
 ) -> BeetsResult:
     ensure_config(settings)
-    args = ["-c", str(settings.beets_dir / "force.yaml")] if force else []
-    args += ["import", "-q", "--search-id", release_mbid]
+    overlay = "force.yaml" if force else "pinned.yaml"
+    args = ["-c", str(settings.beets_dir / overlay), "import", "-q", "--search-id", release_mbid]
     if pretend:
         args.append("--pretend")
     args.append(str(album_dir))
