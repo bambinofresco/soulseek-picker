@@ -1,8 +1,12 @@
 # Playlist import and upgrades: draft specification (v3)
 
-Status: draft for discussion, 28 October 2026, second pass. Nothing here is built. SPEC.md
-describes what exists; this document proposes the next large feature on top of it and amends
-two of its rules (section 1).
+Status: **built, 28 October 2026**, in seven commits (library index, playlists, queue, playlist
+sync, upgrades, tracks-only, Update). SPEC.md sections 17 to 23 now describe the code and win
+where this document differs. Known differences: split MusicBrainz release groups are shown as
+separate rows rather than merged (section 3.3 here); albums Lidarr's profile will not list
+still get their artist added (the album is simply not listed, and the import notes it); the
+Exact-beats-tags rule applies to every import, not only runs. This document stays as the
+record of the design and the decisions behind it.
 
 ## 0. Summary
 

@@ -147,6 +147,18 @@ Before any bandwidth is spent, the picker checks whether the album is in the lib
 
 **The library index.** `/library` (the Library link in the top bar) is what the picker knows about the files on disk: every audio file under the music directory with its tags and MusicBrainz IDs, read with mutagen and never written. It is refreshed for the folder an import or retag just touched, nightly at 03:00 for the whole library (unchanged files are not re-read), and on **Index now**. With Lidarr connected, the nightly pass also compares the two: files on disk Lidarr does not list (albums its metadata profile excludes, folders it has not rescanned) and files Lidarr lists that are not on disk (moved, deleted, or a path mapping that differs between the containers). Nothing is changed on either side. The page also lists folders whose files carry no MusicBrainz release ID, which beets never tagged.
 
+## Playlists, the queue and upgrades
+
+**Playlists.** Export a Spotify playlist to CSV (Exportify works; the picker never talks to Spotify) and upload it at **Playlists**. Every row is matched to a MusicBrainz recording, by ISRC when the file has one and by title, artist and length otherwise, and the review page groups the rows by album. Per album you choose **Full album**, **Only these N**, **Upgrade** (when you already have a copy) or **Skip**; the **Full albums** toggle at the top sets the default, and **Prefer the studio album** sends a track the CSV places on a compilation to the earliest studio album that holds it. A row with a single can switch between the single and the album. Tracks already in your library are ticked (by recording ID, or by name with a *wrong?* escape) and never downloaded. Rows MusicBrainz could not place wait under **Needs attention** with a find-by-hand form. **Start run** is the one click that authorizes the downloads. Upload a newer export with the same name and the picker offers to **Update** the playlist: rows keep their decisions, new rows are added, rows that left are removed.
+
+**The queue.** `/queue` lists every album the picker is obtaining on its own: a playlist's run, **Add to queue** on search results and album pages, **Add all to queue** on the Stuck-in-Lidarr list. Searches run one at a time with a short gap; downloads two at a time (`queue_concurrency`). The queue downloads only the folder the recommendation card would name, and only when its match is **High** or better (`auto_pick_min_tier`) and the folder's possible editions score alike under your preferences; anything weaker, and every Various Artists release, waits for you on the album page. A failed download moves on to the next-best folder (`queue_candidates`), an album nothing was found for is searched again after `queue_retry_days` with the longer search, and imports that need you appear in the run panel. Artists a run adds to Lidarr get monitor-new-items **none**.
+
+**Upgrades.** To replace an album you have: **Upgrade** on its album page, the Upgrade radio on a playlist, or **Replace my copy** on the download confirm form. The old folder moves to `replaced_dir` (`/mediadata/media/replaced` by default) and is never deleted; the import compares old and new (edition and preference score, tracks, bit depth, size) and waits for your confirmation unless `auto_upgrade` is on and the new copy is clearly better. **Put the old copy back** on the import page undoes it. Settings shows the replaced folder's size and offers the only deletion the picker ever performs, copies older than N days, by a click.
+
+**Tracks-only.** With **Only these N**, just the wanted files are downloaded (plus logs, cues and art): the picker finds them in the uploader's folder by length and track number and skips folders where it cannot tell them apart. The partial album skips rip verification, is tagged by beets with the missing-tracks penalty off, and is left unmonitored in Lidarr so Lidarr does not fill the rest from an indexer. A partial copy is never added to later; it is replaced whole (**Upgrade to the full album** in History, or the playlist's **These N + the M you have**).
+
+**The playlist itself.** As albums land, the picker writes `<playlist_dir>/<name>.m3u8` and builds a Plex playlist of the same name, in the CSV's order, from the tracks already owned and the ones obtained; tracks are found in Plex by file path through `plex_music_path`. It syncs after each import, nightly, and on **Sync to Plex**; a track Plex has not scanned yet is retried for ten minutes. Only the Plex playlist the picker created is ever edited.
+
 ## Importing automatically
 
 `auto_import` is on by default. A download imports straight away when it passes every check:
@@ -295,6 +307,10 @@ To release: push to `main` for `latest`, or tag `vX.Y.Z` for a versioned image.
 | `picker/audio.py`, `beets.py`, `importing.py` | Integrity, spectrograms, tag snapshot; the beets subprocess; the import pipeline |
 | `picker/lidarr_feed.py` | Stuck-wanted queue and webhook retags |
 | `picker/library.py`, `owned.py` | The library index (files on disk, their tags, the Lidarr comparison); is this album already here? |
+| `picker/playlists.py` | CSV in, rows resolved to MusicBrainz by ISRC then by name, the album choice, the review page's groups and modes, Update |
+| `picker/queueing.py`, `tracks.py` | The album queue: search, pick, download, import on its own; which files are the wanted tracks |
+| `picker/plexsync.py` | The playlist as an M3U8 file and a Plex playlist kept in step |
+| `picker/clients/plex.py` | Plex: partial scans, finding tracks by path, the playlist endpoints |
 | `picker/probe.py` | The API probe |
 | `picker/web.py`, `templates/` | Pages and HTMX partials |
 | `unraid/picker.xml`, `.github/workflows/image.yml` | Unraid template; test-then-publish workflow |

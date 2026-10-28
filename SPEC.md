@@ -18,10 +18,15 @@ Lidarr can't find or where the edition matters.
 Guarantees the whole design keeps:
 
 - Nothing under the music library is ever deleted or overwritten. A folder that already exists
-  blocks placing and the user decides.
+  blocks placing and the user decides. An upgrade (section 19) *moves* the copy it replaces out
+  of the library to the replaced folder; the picker never deletes it. The one deletion the
+  picker performs is **Delete replaced copies older than N days** on the Settings page, by a click.
 - Downloads are never started without a click. Searching, log fetching, matching and checking
-  may be automatic; downloading is not.
+  may be automatic; downloading is not. One click can authorize many: **Start run** on a
+  playlist and **Add to queue** hand albums to the queue (section 18), which downloads only the
+  recommended folder and only when its match reaches `auto_pick_min_tier`.
 - beets is the only program that writes tags.
+- Plex playlists the picker did not create are never touched.
 - Secrets never appear in logs, pages or probe output. The repository holds placeholders only.
 
 ## 2. Shape of the system
@@ -41,7 +46,9 @@ Guarantees the whole design keeps:
   `/mediadata/media/music`.
 - **Jobs:** an in-process runner over a `jobs` table. Every queued job is its own asyncio task;
   jobs left running by a restart are queued again, so every handler is safe to re-run. Job kinds:
-  search, prefetch (logs), download, import, stuck-refresh, retag, index (the library index).
+  search, prefetch (logs), download, import, stuck-refresh, retag, index (the library index),
+  resolve (a playlist's rows), queue (the album queue's loop), plexsync (a playlist's M3U8 and
+  Plex playlist), undo_upgrade.
 - **Settings:** `picker.yaml`, each field overridable by an environment variable of the same
   name in upper case. The Settings page saves only values that differ from the defaults, so a
   later change of default reaches existing installs.
@@ -57,6 +64,10 @@ Guarantees the whole design keeps:
 | `import` | One trip through the import pipeline (also the History row): step, state, every check's result (integrity, spectrograms, spectrum, tag check, rip check), beets output and match breakdown, final folder, notes. |
 | `job`, `jobevent` | The job queue and the per-album event log. |
 | `libraryfile` | One audio file under the music directory as the library index last saw it: path, size, mtime, duration, bit depth and rate, identifying tags (artist, album artist, album, title, track and disc number), MusicBrainz release, release-group and recording IDs, Lidarr's track-file ID when Lidarr lists the path. |
+| `playlist` | An uploaded playlist: name, CSV hash, state (resolving, review, running, paused, done), the Full-albums and Prefer-studio-album toggles, rows resolved so far, Plex playlist key, M3U8 path, last sync and its note. |
+| `playlisttrack` | One CSV row: position, Spotify URI, ISRC, title, artist, album artist, album, duration, the resolved recording, the album chosen for it and the single holding it, the single-or-album switch, every release group the recording is on, how it was resolved, the library file that is it (and how), dropped, its queue item, its Plex item. |
+| `playlistalbum` | The user's choice for one album of a playlist (full, tracks, tracks_plus, upgrade, skip; unset follows the toggle) and the queue item made from it. |
+| `queueitem` | One album the picker obtains on its own: release group, mode (full, tracks, upgrade), wanted recordings, the owned copy for upgrades, source, state, note, the search, download and import it went through, folders tried, searches that found nothing, next try. |
 | `cacheentry` | Cached MusicBrainz, beets-library and rip-database responses with a fetch time; the last index pass's summary. |
 
 ## 4. Finding an album
@@ -289,6 +300,9 @@ destinations never start with `lidarr/`, which is all Lidarr's slskd plugin clai
 | `/imports/<id>` | The Review page for one import: edition, holds, tag check, rip verification, spectrum check, spectrograms, integrity, beets breakdown and output, tags written. |
 | `/history` | Every import, with badges and the tags written. |
 | `/library` | The library index: counts, the last pass, the Lidarr comparison (files Lidarr does not list, files Lidarr lists that are not on disk), folders without MusicBrainz IDs, unreadable files; **Index now**. |
+| `/playlists` | Upload a CSV; every playlist with its state; Update-or-new prompt when the name exists. |
+| `/playlists/<id>` | The review page (section 17): rows grouped by album with the mode radios, toggles, owned marks, Needs attention, **Start run**; once run, the run panel (counts, what waits for you, what is working) and the playlist's sync state with **Sync to Plex**. |
+| `/queue` | Every queue item with state, note and Skip / Try again; add by release-group ID. |
 | `/settings` | Settings by section with per-service Test buttons, the folder-name dry run, and the probe. |
 
 Below 720 px the candidates table becomes cards with a Sort & filter sheet, the other tables
@@ -304,9 +318,109 @@ stack to labelled rows, buttons are at least 44 px tall, and nothing scrolls sid
 - **Health:** path warnings at start and on every page (download and music directories, slskd
   directory mapping); beets config warnings (musicbrainz plugin missing, move or copy on).
 
-## 17. Not built
+## 17. Playlists
 
-From the v2 roadmap: Test-before-Save on Settings, the album queue with automatic searching,
-the discography view, and upgrades (replacing an album already in the library). Declined by
+A CSV exported from Spotify (Exportify or the like; the picker never talks to Spotify) is
+uploaded at `/playlists`. Columns are found by name (Exportify's first); title, artist and
+album are required, ISRC and duration make the match exact. A `resolve` job turns each row
+into a MusicBrainz recording: by ISRC, 25 per `recording?query=isrc:(...)` request, then by
+title, artist (the first credited one) and duration within 3 s, with a confidence (isrc,
+text-strong, text-weak, none). From the recording's releases the album is chosen: the one the
+CSV names when it is an album or EP; otherwise, with `prefer_studio_album`, the earliest
+release group of primary type Album and no secondary type that holds the recording;
+otherwise the CSV's album. The recording itself never changes (a live version stays live).
+Release groups MusicBrainz splits are not merged (the review page shows both). A single or
+EP holding the recording is kept aside so the row can switch between it and the album; with
+the **Full albums** toggle off a row defaults to its single, in full.
+
+The review page groups rows by album in order of first appearance. Each album has a mode:
+**Full album**, **Only these N**, **Upgrade** (when a copy is owned), **Skip**; unset follows
+the top toggle, and an owned album defaults to Skip. An album the library holds in part while
+the playlist wants more of it offers **Full album** (an upgrade replacing it) or **These N +
+the M you have** (one uploader's folder with the union, also replacing it), never adding files
+to the existing folder. Each row shows how it was resolved, whether the library already has
+it (by recording ID, or **by name** with a *wrong?* escape), the albums it could come from,
+and a drop link. **Needs attention** lists rows resolved weakly or not at all, with a
+find-by-hand form. A size estimate (30 MB a track) sums what the run would download.
+**Start run** hands every non-skipped album to the queue. Uploading a CSV whose name matches
+an existing playlist offers **Update** (rows matched by URI, ISRC, then name keep every
+decision; new rows are added and resolved; rows that left are removed) or a new playlist.
+
+## 18. The queue
+
+`picker/queueing.py`. A queue item is one album to obtain, with a mode (full, tracks,
+upgrade) and a source (a playlist's run, **Add to queue** on search results and album pages,
+**Add all to queue** on the Stuck list, the `/queue` page). One `queue` job ticks every three
+seconds while any item is active and a scheduler restarts it when a retry falls due or the
+user acted on a waiting item:
+
+queued → searching → searched → downloading → importing → done, with side exits
+`needs_pick`, `none_found`, `review`, `failed`, `skipped`, `cancelled`.
+
+Rules: searches run one at a time with a 5 s gap (a finished search under 10 minutes old is
+used as is; a running one is joined); the item waits for the log prefetch to settle; the pick
+is the recommendation card's, started only when its tier reaches `auto_pick_min_tier`
+(High), the folder's possible editions all score alike under the preferences, and the
+release is not Various Artists (always `needs_pick`); at most `queue_concurrency` (2)
+downloads at once; a failed or partial download moves to the next-best folder for the same
+edition, up to `queue_candidates` (3), then `failed`; nothing found parks the item for
+`queue_retry_days` (7) and the second search is the longer one, three searches in all; an
+import waiting on the user puts the item at `review` until it is imported (done) or rejected
+(next folder); a download the user starts by hand for a queued album is adopted. A run can be
+paused (nothing new starts), resumed, or cancelled (items not yet downloading close; running
+downloads finish). Artists a run adds to Lidarr get monitor-new-items none.
+
+## 19. Upgrades
+
+A download can carry `upgrade_of`, the library folder it replaces: from the queue's upgrade
+mode, the review page's Upgrade radio, **Upgrade** on an owned album's page, or **Replace my
+copy** on the confirm form. At placing, after a free-space check, the old folder moves to
+`replaced_dir` (`/mediadata/media/replaced/<artist>/<album> (<date>)`) and the index forgets
+it; the new folder is placed; beets forgets the old entry (`beet remove -a -f path:`) and
+imports the new one; Lidarr rescans; Plex scans; playlists re-sync. Before that, the import
+compares old (from the index) and new (from the download): edition and preference score,
+tracks and completeness, bit depth, size, and `better` means strictly better on one count and
+worse on none. An upgrade waits at review unless `auto_upgrade` is on and the new copy is
+better. **Put the old copy back** on the import page swaps them again while the replaced copy
+exists (state `undone`). Settings shows the replaced folder's size and offers the only
+deletion the picker performs.
+
+## 20. Tracks-only
+
+Editions carry recording IDs per track. `picker/tracks.py` names the files in a folder that
+are the wanted recordings: by duration first (within 3 s of the edition's track length), the
+track number parsed from the file name as the tie-breaker, across disc subfolders or one
+folder numbered straight through. A folder in which any wanted track cannot be told apart is
+not eligible, and the queue filters folders that way before the usual pick. Only those files
+(plus logs, cues and art) are requested; the download and import are marked partial. A
+partial import skips rip verification (no table of contents without the whole disc), runs
+beets with `partial.yaml` (the pinned weights plus `missing_tracks: 0`), and leaves the album
+unmonitored in Lidarr while still setting its release. History marks it and offers **Upgrade
+to the full album**. A partial copy is never added to; it is replaced (section 19).
+
+## 21. Playlist sync
+
+`picker/plexsync.py`. A playlist's rows are looked up in the library index (recording ID,
+else name), after indexing the folder of any import just finished. The M3U8 at
+`<playlist_dir>/<name>.m3u8` is rewritten in full in the CSV's order with commented
+placeholders for rows not yet obtained. In Plex, the playlist the picker created (its rating
+key remembered; recreated if gone) is brought to the same list: tracks found by file path
+(`plex_music_path`) through the section's title filter or the album's children, items added,
+removed and moved, duplicates kept. The sync runs when a run starts, after each import of a
+run (debounced a minute), nightly at 04:00, and from **Sync to Plex**; one that cannot find a
+just-imported file in Plex asks for itself again a minute later, up to ten times.
+
+## 22. Tag check versus an Exact match
+
+A *different* tag check does not hold an import whose folder matched Exact (a disc ID,
+catalog number or barcode agreed with the chosen edition): physical evidence beats tags, and
+beets retags. Weaker matches still hold, as before.
+
+## 23. Not built
+
+From the v2 roadmap: Test-before-Save on Settings and the discography view. From the v3 draft:
+MusicBrainz release groups that split one album into several are shown as separate rows
+rather than merged; albums Lidarr's metadata profile will not list still get their artist
+added to Lidarr (the album is simply not listed there, and the import notes it). Declined by
 the owner: catalog-number search, filling a partial download from another uploader,
-notifications, remembering uploaders, browsing sibling folders.
+notifications, remembering uploaders, browsing sibling folders, any use of the Spotify API.
