@@ -254,6 +254,10 @@ Found by reading the tools' source or running them:
 - **Matching:** remaster mismatches lower an edition's score but don't cap the tier at Low.
 - **Rip quality** is scored out of 4 (log, secure ripper, AccurateRip/checksum, cue) and completeness out of 2 (all tracks, cover art).
 
+## The current specification
+
+`SPEC.md` describes the app as built: every subsystem's rules, the data model, the pipeline, the pages, and what is not built. The older `soulseek-release-picker-spec.md` (v1 request) and `soulseek-release-picker-spec-v2.md` (v2 roadmap) are kept for history.
+
 ## Development
 
 Needs Python 3.12.
