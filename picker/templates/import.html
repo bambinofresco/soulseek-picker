@@ -75,7 +75,7 @@
     {% endif %}
     {% if imp.state == "skipped" %}
       <form method="post" action="/imports/{{ imp.id }}/force"><button class="primary">Force apply</button></form>
-      <span class="small muted">Reruns beets with strong_rec_thresh 1.0: it applies the chosen release whatever the distance.</span>
+      <span class="small muted">Tags the files as the chosen edition whatever beets' rating (see why it skipped, below).</span>
     {% endif %}
     {% set damaged = (imp.integrity or [])|rejectattr("ok")|list %}
     {% if imp.state == "failed" and imp.step == "verify" and damaged and not imp.album_dir %}
@@ -135,9 +135,16 @@
 </section>
 {% endif %}
 
+{% if imp.beets_match %}
+<section class="card">
+  <h2>Why beets skipped it</h2>
+  {% include "_beets_match.html" %}
+</section>
+{% endif %}
+
 {% if imp.beets_output %}
 <section>
-  <details {% if imp.state == "skipped" %}open{% endif %}><summary>beets output</summary><pre class="output">{{ imp.beets_output }}</pre></details>
+  <details {% if imp.state == "skipped" and not imp.beets_match %}open{% endif %}><summary>beets output</summary><pre class="output">{{ imp.beets_output }}</pre></details>
 </section>
 {% endif %}
 {% endblock %}

@@ -258,10 +258,22 @@ async def test_beets_skip_then_force(env, monkeypatch):
         return 0, "Skipping."
 
     monkeypatch.setattr(beets, "_beet", fake_beet)
+
+    async def fake_explain(s, album_dir, release):
+        assert Path(album_dir).name == "OK Computer (1997)" and release == REL
+        return {"similarity": 0.827, "threshold": 0.9, "penalties": [{"key": "tracks", "name": "track differences (below)", "distance": 0.17}],
+                "tracks": [], "missing": [], "unmatched": [], "album": "Radiohead - OK Computer", "release": REL}
+
+    monkeypatch.setattr(beets, "explain_skip", fake_explain)
     imp = await run(importing.start_import(landed_download(settings, job_id=11)))
     imp = await run(importing.approve(imp))
     assert imp.state == "skipped" and imp.step == "beets"
     assert "Skipping." in imp.beets_output
+    assert imp.beets_match["similarity"] == 0.827  # the breakdown the Review page shows
+    with session() as s:
+        from picker.models import JobEvent
+        events = [e.message for e in s.exec(select(JobEvent)).all()]
+    assert any("(82.7%, needs 90%)" in e for e in events), events
 
     imp = await run(importing.force_apply(imp))
     assert imp.state == "imported"

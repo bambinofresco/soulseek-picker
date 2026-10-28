@@ -13,6 +13,7 @@ the release is now there at that folder.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import sys
@@ -147,6 +148,28 @@ def _same_dir(a: str, b: Path) -> bool:
         return Path(a).resolve() == b.resolve()
     except OSError:
         return False
+
+
+async def explain_skip(settings: Settings, album_dir: Path, release_mbid: str) -> dict:
+    """beets' distance breakdown for the pinned release (see beets_explain.py); never raises."""
+    env = {**os.environ, "BEETSDIR": str(settings.beets_dir), "PYTHONIOENCODING": "utf-8"}
+    args = [str(settings.beets_dir), str(settings.beets_dir / "pinned.yaml"), release_mbid, str(album_dir)]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "picker.beets_explain", *args,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env, stdin=asyncio.subprocess.DEVNULL,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(), 300)
+    except (OSError, TimeoutError) as exc:
+        return {"error": f"could not run the matcher: {exc}"}
+    for line in reversed(out.decode("utf-8", "replace").splitlines()):
+        if line.startswith("{"):
+            try:
+                return json.loads(line)
+            except ValueError:
+                break
+    tail = ANSI_ESCAPE.sub("", err.decode("utf-8", "replace")).strip().splitlines()
+    return {"error": f"the matcher exited {proc.returncode}: {tail[-1] if tail else 'no output'}"}
 
 
 async def album_paths(settings: Settings, release_mbid: str) -> list[str]:

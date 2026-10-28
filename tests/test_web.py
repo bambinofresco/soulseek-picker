@@ -262,6 +262,37 @@ def test_missing_columns_are_added(tmp_path):
     assert {"parsed", "sidecars", "upload_speed"} <= cols
 
 
+def test_review_page_explains_a_beets_skip(client, with_editions):
+    from picker.models import Import
+    seed()
+    match = {
+        "release": "jp-cd", "album": "Radiohead - OK Computer", "similarity": 0.827, "threshold": 0.9,
+        "penalties": [{"key": "tracks", "name": "track differences (below)", "distance": 0.173}],
+        "tracks": [
+            {"file": "01 Airbag.flac", "file_title": "Airbag", "file_length": 284.7, "index": 1, "medium": 1, "title": "Airbag",
+             "length": 284.6, "length_diff": 0.1, "distance": 0.0, "penalties": []},
+            {"file": "02 Paranoid Android.flac", "file_title": "Paranoid Android (live)", "file_length": 390.2, "index": 2, "medium": 1,
+             "title": "Paranoid Android", "length": 383.5, "length_diff": 6.7, "distance": 0.41,
+             "penalties": [{"key": "track_title", "name": "title", "distance": 0.3}, {"key": "track_length", "name": "length", "distance": 0.11}]},
+        ],
+        "missing": [{"index": 12, "medium": 1, "title": "The Tourist", "length": 324.0}],
+        "unmatched": ["13 Bonus.flac"],
+    }
+    with session() as s:
+        imp = Import(rg_mbid="rg-1", release_mbid="jp-cd", username="alice", state="skipped", step="beets",
+                     album_dir="/music/Radiohead/OK Computer (1997)", beets_output="Skipping.", beets_match=match)
+        s.add(imp)
+        s.commit()
+        s.refresh(imp)
+    html = client.get(f"/imports/{imp.id}").text
+    assert "Why beets skipped it" in html and "beets rated the match 82.7%" in html and "from 90.0%" in html
+    assert "02 Paranoid Android.flac" in html and "tagged “Paranoid Android (live)”" in html and "(+6.7 s)" in html
+    assert "01 Airbag.flac" not in html  # paired cleanly: not listed
+    assert "The Tourist" in html and "missing from the folder" in html
+    assert "13 Bonus.flac" in html and "matches nothing on the release" in html
+    assert "Force apply" in html
+
+
 def test_backup_copies_the_database_and_keeps_the_newest(tmp_path, monkeypatch):
     from picker.db import backup_db
     db = tmp_path / "picker.db"

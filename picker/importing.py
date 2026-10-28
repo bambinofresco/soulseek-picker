@@ -451,8 +451,12 @@ async def _beets(imp: Import, settings: Settings) -> bool:
         log_event(imp.job_id, imp.rg_mbid, "beets tagged the album" + (" (forced)" if imp.force else ""))
         return True
     if result.skipped:
-        _save(imp, state="skipped")
-        log_event(imp.job_id, imp.rg_mbid, "beets skipped the album: the match was not strong enough. Review its output, then Force apply")
+        # beets says only "Skipping."; ask its matcher what cost the points so the Review page can show it.
+        explanation = await beets.explain_skip(settings, album_dir, imp.release_mbid)
+        _save(imp, state="skipped", beets_match=explanation)
+        rated = f" ({explanation['similarity'] * 100:.1f}%, needs {explanation['threshold'] * 100:.0f}%)" if "similarity" in explanation else ""
+        log_event(imp.job_id, imp.rg_mbid, f"beets skipped the album: the match was not strong enough{rated}. "
+                                           "The Review page shows what differed; Force apply tags it anyway")
         return False
     raise JobFailed(f"beets exited {result.exit_code}: {(result.output.splitlines() or ['no output'])[-1]}")
 

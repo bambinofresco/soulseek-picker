@@ -1,0 +1,32 @@
+{#- beets' own distance breakdown for the pinned release (imp.beets_match, from picker/beets_explain.py). -#}
+{% set bm = imp.beets_match %}
+{% if bm.error %}
+  <p class="small muted">Could not work out why beets skipped it: {{ bm.error }}</p>
+{% else %}
+  <p><strong>beets rated the match {{ (bm.similarity * 100)|round(1) }}%</strong> against {{ bm.album }};
+    it imports by itself from {{ (bm.threshold * 100)|round(1) }}%.
+    {% if bm.penalties %}What cost points: {% for p in bm.penalties %}{{ p.name }} ({{ p.distance }}){% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}</p>
+  {% set odd = bm.tracks|selectattr("penalties")|list %}
+  {% if odd or bm.missing or bm.unmatched %}
+  <table class="grid small beets-match">
+    <tr><th>File</th><th>Paired with</th><th>Length</th><th>Differs</th></tr>
+    {% for t in bm.tracks if t.penalties %}
+    <tr>
+      <td class="mono">{{ t.file }}{% if t.file_title and t.file_title != t.title %}<br><span class="muted">tagged “{{ t.file_title }}”</span>{% endif %}</td>
+      <td>{% if t.medium and bm.tracks|map(attribute="medium")|unique|list|length > 1 %}{{ t.medium }}-{% endif %}{{ t.index }} {{ t.title }}</td>
+      <td class="nowrap">{% if t.file_length is not none and t.length is not none %}{{ t.file_length }} s vs {{ t.length }} s{% if t.length_diff %} ({{ "%+.1f"|format(t.length_diff) }} s){% endif %}{% elif t.length is not none %}? vs {{ t.length }} s{% endif %}</td>
+      <td class="warn-text">{% for p in t.penalties %}{{ p.name }} ({{ p.distance }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
+    </tr>
+    {% endfor %}
+    {% for m in bm.missing %}
+    <tr><td class="muted">no file</td><td>{{ m.index }} {{ m.title }}</td><td class="nowrap">{% if m.length %}{{ m.length }} s{% endif %}</td><td class="warn-text">missing from the folder</td></tr>
+    {% endfor %}
+    {% for u in bm.unmatched %}
+    <tr><td class="mono">{{ u }}</td><td class="muted">no track</td><td></td><td class="warn-text">matches nothing on the release</td></tr>
+    {% endfor %}
+  </table>
+  <p class="small muted">Tracks that paired cleanly are not listed. A length a few seconds off is usually a different master or pressing; a title that differs is usually a different track or a mislabeled file.</p>
+  {% else %}
+  <p class="small muted">Every file paired cleanly with a track; the points went to album-level fields above.</p>
+  {% endif %}
+{% endif %}
