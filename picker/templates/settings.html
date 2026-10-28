@@ -28,6 +28,12 @@
       {% endif %}
     </label>
     {% endfor %}
+    {% if section == "Import" %}
+    <div class="folder-preview-box small" hx-post="/settings/folder-preview" hx-trigger="load, input delay:400ms from:[name='album_folder_template']"
+         hx-include="[name='album_folder_template']" hx-swap="innerHTML">
+      <span class="muted">Working out folder names…</span>
+    </div>
+    {% endif %}
     {% if section in section_service %}
     <div class="test-row">
       <button type="button" hx-post="/settings/test/{{ section_service[section] }}" hx-target="next .test-result" hx-swap="innerHTML">Test</button>

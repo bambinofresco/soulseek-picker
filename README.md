@@ -75,7 +75,7 @@ The picker renders the folder name the way Lidarr's FileNameBuilder does (`picke
 - Leading dots and trailing separators are trimmed, and repeated separators are collapsed.
 - A missing year gives `(Unknown)`.
 
-If you change Lidarr's formats, change the template to match; the probe flags any difference.
+If you change Lidarr's formats, change the template to match; the probe flags any difference. The Settings page shows, as you type, what the template would name your last three imported albums (or an example album before any import). Existing folders are never renamed.
 
 Tokens:
 
@@ -157,6 +157,10 @@ When files fail it, the picker deletes the damaged copies and downloads just tho
 - **Reject and try the next folder**
 
 Only files inside the download directory's `picker/` folder are ever deleted.
+
+## Database backups
+
+The picker's SQLite database (`/config/picker.db`) holds the import history, which is the only record of which edition each folder was tagged as. Every container start copies it to `/config/backups/picker-<timestamp>.db` before opening it, using SQLite's online backup, and keeps the newest 10 copies. To restore one, stop the container and copy it over `picker.db` (delete `picker.db-wal` and `picker.db-shm` if present).
 
 ## Checking the real APIs
 

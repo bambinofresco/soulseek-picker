@@ -27,6 +27,7 @@ from .db import session
 from .downloading import downloads_for_search, request_give_up, retry_failed_files, start_download
 from .models import Album, Candidate, Download, Import, Job, JobEvent, Search, utcnow
 from .editions import Edition
+from .naming import FolderValues, album_folder, unknown_tokens
 from .matching import completeness, rip_quality
 from .transfers import summary as transfer_summary
 from .searching import (
@@ -606,6 +607,45 @@ async def settings_save(request: Request):
         return await settings_page(request, error=str(exc).splitlines()[0])
     await reset_services()
     return RedirectResponse("/settings?saved=1", status_code=303)
+
+
+EXAMPLE_FOLDER = FolderValues(
+    album_title="OK Computer", release_year="1997", artist_name="Radiohead", album_type="Album",
+    album_mbid="b1392450-e666-3926-a536-22c65f834433", artist_mbid="a74b1b7f-71a5-4011-9441-d0b5e4122711",
+    catalog_number="CDP 7243 8 55229 2 5", label="Capitol Records", country="US", media="CD", edition_date="1997-07-01",
+)
+
+
+@router.post("/settings/folder-preview", response_class=HTMLResponse)
+async def settings_folder_preview(request: Request):
+    """What `album_folder_template` would name the last few imported albums (or an example)."""
+    form = await request.form()
+    template = str(form.get("album_folder_template") or "").strip() or Settings.model_fields["album_folder_template"].default
+    settings = get_settings()
+    bad = unknown_tokens(template)
+    if bad:
+        return HTMLResponse(f'<p class="small warn-text">Unknown token{"s" if len(bad) > 1 else ""}: {escape(", ".join(bad))}</p>')
+    with session() as s:
+        imports = s.exec(select(Import).where(Import.release_mbid.is_not(None), Import.state == "imported")
+                         .order_by(Import.id.desc()).limit(3)).all()
+        albums_by_rg = {a.rg_mbid: a for a in s.exec(select(Album).where(Album.rg_mbid.in_([i.rg_mbid for i in imports]))).all()}
+    rows = []
+    for imp in imports:
+        album = albums_by_rg.get(imp.rg_mbid)
+        if album is None:
+            continue
+        try:
+            values = await importing.folder_values(imp, album, settings)
+        except ServiceError:
+            continue
+        rows.append((album.artist, album_folder(template, values), "would stay" if imp.album_dir and Path(imp.album_dir).name == album_folder(template, values) else "would change"))
+    if not rows:
+        rows.append((EXAMPLE_FOLDER.artist_name, album_folder(template, EXAMPLE_FOLDER), "example"))
+    items = "".join(f'<li><span class="mono">{escape(artist)} / {escape(name)}</span> <span class="muted">({escape(note)})</span></li>'
+                    for artist, name, note in rows)
+    hint = ("from your last imports; existing folders are never renamed" if rows[0][2] != "example"
+            else "no imports yet, so an example album")
+    return HTMLResponse(f'<ul class="small folder-preview">{items}</ul><p class="small muted">{hint}.</p>')
 
 
 @router.post("/settings/probe", response_class=HTMLResponse)

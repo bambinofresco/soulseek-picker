@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import timedelta
+import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,38 @@ from . import models  # noqa: F401  (registers tables)
 from .models import CacheEntry, utcnow
 
 _engine: Engine | None = None
+
+
+BACKUPS_KEPT = 10
+
+
+def backup_db(path: Path, keep: int = BACKUPS_KEPT) -> Path | None:
+    """Copy the database to <config>/backups/picker-<timestamp>.db before it is opened.
+
+    The import history is the only record of which edition each folder was tagged as, and
+    an upgrade that migrates the schema is the moment it is most at risk. SQLite's online
+    backup API copies a consistent snapshot even with a WAL file alongside. Only the newest
+    `keep` copies are kept.
+    """
+    path = Path(path)
+    if not path.is_file():
+        return None
+    folder = path.parent / "backups"
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{path.stem}-{datetime.now().strftime('%Y%m%d-%H%M%S')}{path.suffix}"
+    src = sqlite3.connect(path)
+    try:
+        dst = sqlite3.connect(target)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+    copies = sorted(folder.glob(f"{path.stem}-*{path.suffix}"))
+    for old in copies[:-keep] if keep > 0 else copies:
+        old.unlink(missing_ok=True)
+    return target
 
 
 def init_db(path: Path | str) -> Engine:

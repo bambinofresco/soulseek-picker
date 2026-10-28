@@ -262,6 +262,57 @@ def test_missing_columns_are_added(tmp_path):
     assert {"parsed", "sidecars", "upload_speed"} <= cols
 
 
+def test_backup_copies_the_database_and_keeps_the_newest(tmp_path, monkeypatch):
+    from picker.db import backup_db
+    db = tmp_path / "picker.db"
+    assert backup_db(db) is None  # nothing to back up yet
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE t (x)")
+    con.execute("INSERT INTO t VALUES (42)")
+    con.commit()
+    con.close()
+    stamps = iter(["20260101-000000", "20260102-000000", "20260103-000000"])
+
+    class Clock:
+        @staticmethod
+        def now():
+            class Stamp:
+                @staticmethod
+                def strftime(fmt):
+                    return next(stamps)
+            return Stamp()
+
+    monkeypatch.setattr("picker.db.datetime", Clock)
+    copies = [backup_db(db, keep=2) for _ in range(3)]
+    assert copies[0].name == "picker-20260101-000000.db"
+    assert sorted(p.name for p in (tmp_path / "backups").iterdir()) == ["picker-20260102-000000.db", "picker-20260103-000000.db"]
+    assert sqlite3.connect(copies[-1]).execute("SELECT x FROM t").fetchone() == (42,)
+
+
+def test_folder_preview_renders_the_template(client, settings):
+    html = client.post("/settings/folder-preview", data={"album_folder_template": "{Album Title} ({Release Year}){ [Catalog Number]}"}).text
+    assert "Radiohead / OK Computer (1997) [CDP 7243 8 55229 2 5]" in html and "example" in html
+    assert "Unknown token" in client.post("/settings/folder-preview", data={"album_folder_template": "{Nope}"}).text
+    assert "OK Computer (1997)" in client.post("/settings/folder-preview", data={}).text  # blank: the default
+    assert 'hx-post="/settings/folder-preview"' in client.get("/settings").text
+
+
+def test_folder_preview_uses_recent_imports(client, settings, with_editions):
+    from picker.models import Import
+    seed()
+    with session() as s:
+        album = s.get(Album, "rg-1")
+        album.first_release_date = "1997-05-21"
+        s.add(album)
+        s.add(Import(rg_mbid="rg-1", release_mbid="jp-cd", state="imported", step="done",
+                     album_dir="/music/Radiohead/OK Computer (1997)"))
+        s.commit()
+    html = client.post("/settings/folder-preview", data={"album_folder_template": "{Album Title} ({Release Year})"}).text
+    assert "Radiohead / OK Computer (1997)" in html and "would stay" in html
+    html = client.post("/settings/folder-preview", data={"album_folder_template": "{Album Title} [{Country}]"}).text
+    assert "Radiohead / OK Computer [JP]" in html and "would change" in html
+
+
 def test_give_up_starts_the_next_candidate(client, monkeypatch):
     from picker import web
     from picker.models import Download

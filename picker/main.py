@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,7 +14,7 @@ from .lidarr_feed import stuck_scheduler
 from .beets import ensure_config as ensure_beets_config
 from .clients import close_services
 from .config import get_settings
-from .db import init_db
+from .db import backup_db, init_db
 from .health import path_warnings
 from .jobs import worker
 from .web import router
@@ -25,6 +26,13 @@ log = logging.getLogger("picker")
 async def lifespan(app: FastAPI):
     settings = get_settings()
     settings.config_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        backup = backup_db(settings.db_path)
+    except (OSError, sqlite3.Error) as exc:
+        log.warning("Could not back up %s: %s", settings.db_path, exc)
+    else:
+        if backup:
+            log.info("Backed up the database to %s", backup)
     init_db(settings.db_path)
     ensure_beets_config(settings)
     for warning in path_warnings(settings):
