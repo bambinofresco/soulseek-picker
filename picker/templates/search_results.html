@@ -10,7 +10,8 @@
     <tbody>
     {% for rg in results %}
     <tr>
-      <td>{{ rg.title }}{% if rg.disambiguation %} <span class="muted">({{ rg.disambiguation }})</span>{% endif %}</td>
+      <td>{{ rg.title }}{% if rg.disambiguation %} <span class="muted">({{ rg.disambiguation }})</span>{% endif %}
+        {% if rg.id in have %} <span class="badge ok" title="{{ have[rg.id].path or 'in the library' }}">in library</span>{% endif %}</td>
       <td>{{ rg.artist_name }}</td>
       <td>{{ rg["primary-type"] or "" }}{% for t in rg.get("secondary-types", []) %} · {{ t }}{% endfor %}</td>
       <td>{{ rg["first-release-date"] or "" }}</td>

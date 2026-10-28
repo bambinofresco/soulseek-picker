@@ -116,6 +116,10 @@ The one interaction: slskd refuses to enqueue a file that's already in flight fr
 - **Search more** searches the same album again for up to 3 minutes and merges new folders into the table. Rows already there keep their log results and downloads.
 - MusicBrainz editions load while slskd searches, instead of before.
 
+## Albums you already have
+
+Before any bandwidth is spent, the picker checks whether the album is in the library. The album page shows a banner naming the edition and where it is, from the first source that knows: the picker's own import history (if the folder still exists), Lidarr (track files present; the monitored release is the edition), or the beets library. Find-album results carry an **in library** badge from the local sources (history and beets; Lidarr is asked on the album page only). You can still search and download; the import then stops at placing because the folder exists, since the picker never overwrites anything in the library. Replacing an album you have is the upgrades phase of the spec.
+
 ## Importing automatically
 
 `auto_import` is on by default. A download imports straight away when it passes every check:

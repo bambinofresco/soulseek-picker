@@ -17,7 +17,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlmodel import select
 
-from . import albums, health, importing, lidarr_feed, prefetching, probe
+from . import albums, health, importing, lidarr_feed, owned, prefetching, probe
 from .beets import config_warnings as beets_config_warnings
 from .clients import reset_services, services
 from .clients.http import ServiceError
@@ -142,7 +142,8 @@ async def album_search(request: Request, artist: str = "", album: str = ""):
         error = exc.message
     for rg in results:
         rg["artist_name"] = albums.artist_credit_name(rg)
-    return render(request, "search_results.html", artist=artist, album=album, results=results, error=error)
+    have = await owned.owned_release_groups([rg["id"] for rg in results], get_settings()) if results else {}
+    return render(request, "search_results.html", artist=artist, album=album, results=results, error=error, have=have)
 
 
 # Album page
@@ -160,7 +161,10 @@ async def album_page(request: Request, rg_mbid: str, search: bool = False):
         if not latest or not (latest.state in ACTIVE_SEARCH or recent):
             start_search(rg_mbid)
         return RedirectResponse(f"/album/{rg_mbid}", status_code=303)  # a refresh doesn't search again
-    return render(request, "album.html", album=album, search=latest_search(rg_mbid))
+    have = await owned.check_album(rg_mbid, get_settings())
+    editions, _ = (await _editions(rg_mbid)) if have and have.release_mbid else ([], None)
+    return render(request, "album.html", album=album, search=latest_search(rg_mbid), have=have,
+                  have_edition=next((e for e in editions if e.id == have.release_mbid), None) if have else None)
 
 
 async def _editions(rg_mbid: str) -> tuple[list[Edition], str | None]:

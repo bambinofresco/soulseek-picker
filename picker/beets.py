@@ -178,6 +178,20 @@ async def album_paths(settings: Settings, release_mbid: str) -> list[str]:
     return [line.strip() for line in out.splitlines() if line.strip()] if code == 0 else []
 
 
+async def album_list(settings: Settings) -> dict[str, dict]:
+    """Release group -> {"release", "path"} for every album in the beets library."""
+    ensure_config(settings)
+    code, out = await _beet(settings, ["ls", "-a", "-f", "$mb_releasegroupid\t$mb_albumid\t$path"], 120)
+    albums: dict[str, dict] = {}
+    if code != 0:
+        return albums
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 3 and parts[0].strip():
+            albums.setdefault(parts[0].strip(), {"release": parts[1].strip() or None, "path": parts[2].strip() or None})
+    return albums
+
+
 async def forget_album(settings: Settings, release_mbid: str, album_dir: Path) -> None:
     """Drop the library entry (never the files) so a retag starts clean."""
     for path in await album_paths(settings, release_mbid):

@@ -262,6 +262,39 @@ def test_missing_columns_are_added(tmp_path):
     assert {"parsed", "sidecars", "upload_speed"} <= cols
 
 
+def test_album_page_and_results_say_when_you_already_have_it(client, with_editions, monkeypatch, settings):
+    from picker import owned
+    from picker.models import Import
+    seed()
+    with session() as s:
+        imp = Import(rg_mbid="rg-1", release_mbid="jp-cd", state="imported", step="done", album_dir=str(settings.music_dir))
+        s.add(imp)
+        s.commit()
+        s.refresh(imp)
+
+    async def no_library(s):
+        return {}
+
+    monkeypatch.setattr("picker.beets.album_list", no_library)
+    html = client.get("/album/rg-1").text
+    assert "You already have this album" in html and "1997-05-28 · JP · CD · Toshiba-EMI · TOCP-50201" in html
+    assert "was imported by the picker" in html and f"/imports/{imp.id}" in html
+
+    async def fake_search(artist, album, limit=25):
+        return [{"id": "rg-1", "title": "OK Computer", "artist-credit": [{"name": "Radiohead"}]},
+                {"id": "rg-9", "title": "Kid A", "artist-credit": [{"name": "Radiohead"}]}]
+
+    class MB:
+        search_release_groups = staticmethod(fake_search)
+
+    class S:
+        mb = MB()
+
+    monkeypatch.setattr("picker.web.services", lambda: S())
+    html = client.get("/search?artist=Radiohead&album=").text
+    assert html.count("in library") == 1 and html.index("OK Computer") < html.index("in library") < html.index("Kid A")
+
+
 def test_review_page_explains_a_beets_skip(client, with_editions):
     from picker.models import Import
     seed()
