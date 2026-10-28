@@ -170,6 +170,7 @@ class Playlist(SQLModel, table=True):
     plex_rating_key: str | None = None
     m3u_path: str | None = None
     last_sync: datetime | None = None
+    sync_note: str | None = None  # what the last sync did, or why it could not
     created_at: datetime = Field(default_factory=utcnow)
 
 

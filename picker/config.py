@@ -32,6 +32,8 @@ class Settings(BaseModel):
     plex_section_id: str = ""
     # The library root as Plex sees it. Empty means the same path as music_dir.
     plex_music_path: str = ""
+    # Where playlists are written as M3U8 files (outside the music library); the Plex playlist is built from the same list.
+    playlist_dir: Path = Path("/mediadata/media/playlists")
     # autoscan's manual trigger: the picker asks it to scan each imported folder. Empty: off.
     autoscan_url: str = ""  # e.g. http://192.168.1.10:3030
     autoscan_username: str = ""

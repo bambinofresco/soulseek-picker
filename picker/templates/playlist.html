@@ -10,6 +10,18 @@
 
 {% if r.playlist.state in ("running", "paused", "done") %}
 <div hx-get="/playlists/{{ r.playlist.id }}/run" hx-trigger="load" hx-swap="outerHTML"><p class="muted">Loading the run…</p></div>
+<section class="card sync">
+  <div class="toolbar">
+    <h2>The playlist</h2>
+    <form method="post" action="/playlists/{{ r.playlist.id }}/sync"><button class="small">Sync to Plex</button></form>
+  </div>
+  {% if r.playlist.last_sync %}
+  <p class="small">Last sync {{ r.playlist.last_sync|local }}: {{ r.playlist.sync_note }}</p>
+  {% if r.playlist.m3u_path %}<p class="small muted">M3U8: <span class="mono">{{ r.playlist.m3u_path }}</span></p>{% endif %}
+  {% else %}
+  <p class="small muted">Not synced yet. The M3U8 file and the Plex playlist are built from the tracks already in the library and from each album the run imports; Sync to Plex redoes the whole list at any time.</p>
+  {% endif %}
+</section>
 {% endif %}
 
 {% if r.playlist.state == "review" %}

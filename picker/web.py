@@ -17,8 +17,8 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlmodel import select
 
-from . import (albums, health, importing, library, lidarr_feed, owned, playlists, preferences, prefetching, probe, queueing,
-               recommend, ripverify)
+from . import (albums, health, importing, library, lidarr_feed, owned, playlists, plexsync, preferences, prefetching, probe,
+               queueing, recommend, ripverify)
 from .queries import normalize as _normalize
 from .beets import config_warnings as beets_config_warnings, explain_skip as beets_explain_skip
 from .clients import reset_services, services
@@ -709,6 +709,13 @@ async def playlist_resolve(playlist_id: int):
     return RedirectResponse(f"/playlists/{playlist_id}", status_code=303)
 
 
+@router.post("/playlists/{playlist_id}/sync")
+async def playlist_sync(playlist_id: int):
+    """Rewrite the M3U8 and bring the Plex playlist in step, now."""
+    plexsync.queue_sync(playlist_id, timedelta(0))
+    return RedirectResponse(f"/playlists/{playlist_id}", status_code=303)
+
+
 @router.post("/playlists/{playlist_id}/delete")
 async def playlist_delete(playlist_id: int):
     playlists.delete_playlist(playlist_id)
@@ -796,7 +803,7 @@ FORM_SECTIONS = {
     "Paths": ["download_dir", "music_dir", "port"],
     "slskd": ["slskd_url", "slskd_api_key"],
     "Lidarr": ["lidarr_url", "lidarr_api_key", "webhook_username", "webhook_password"],
-    "Plex": ["plex_url", "plex_token", "plex_section_id", "plex_music_path"],
+    "Plex": ["plex_url", "plex_token", "plex_section_id", "plex_music_path", "playlist_dir"],
     "autoscan": ["autoscan_url", "autoscan_username", "autoscan_password"],
     "MusicBrainz": ["mb_contact"],
     "Search": ["search_timeout", "search_response_limit", "search_file_limit", "min_flac_folders",

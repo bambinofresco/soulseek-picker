@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import downloading, importing, library, lidarr_feed, playlists, prefetching, queueing, searching  # noqa: F401  (register job handlers)
+from . import downloading, importing, library, lidarr_feed, playlists, plexsync, prefetching, queueing, searching  # noqa: F401  (register job handlers)
 from .lidarr_feed import stuck_scheduler
 from .beets import ensure_config as ensure_beets_config
 from .clients import close_services
@@ -40,7 +40,8 @@ async def lifespan(app: FastAPI):
     worker.start()
     schedulers = [asyncio.create_task(stuck_scheduler(), name="stuck-scheduler"),
                   asyncio.create_task(library.scheduler(), name="library-scheduler"),
-                  asyncio.create_task(queueing.scheduler(), name="queue-scheduler")]
+                  asyncio.create_task(queueing.scheduler(), name="queue-scheduler"),
+                  asyncio.create_task(plexsync.scheduler(), name="plexsync-scheduler")]
     yield
     for scheduler in schedulers:
         scheduler.cancel()

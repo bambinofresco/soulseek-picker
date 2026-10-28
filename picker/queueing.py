@@ -28,7 +28,7 @@ from datetime import datetime, timedelta
 
 from sqlmodel import col, select
 
-from . import albums, prefetching, recommend
+from . import albums, plexsync, prefetching, recommend
 from .clients.http import ServiceError
 from .config import Settings, get_settings
 from .db import session
@@ -149,6 +149,7 @@ async def start_run(playlist_id: int, settings: Settings | None = None) -> int:
         s.commit()
     log_event(None, None, f"Run started for playlist “{data.playlist.name}”: {created} album(s) queued")
     ensure_running()
+    plexsync.queue_sync(playlist_id, timedelta(0))  # the tracks already owned go into the playlist now
     return created
 
 
@@ -439,6 +440,8 @@ def _check_import(item: QueueItem, settings: Settings) -> None:
     if imp.state == "imported":
         _save(item, state="done", note=f"imported into {imp.album_dir}")
         _event(item, f"done: {imp.album_dir}")
+        if item.playlist_id:
+            plexsync.queue_sync(item.playlist_id)  # the playlist gains this album's tracks
     elif imp.state in IMPORT_WAITING:
         if item.state != "review":
             _save(item, state="review", note=imp.error or f"waiting at review ({imp.step})")
