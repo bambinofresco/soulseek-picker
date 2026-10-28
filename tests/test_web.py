@@ -90,6 +90,8 @@ RELEASES = [
     {"id": "jp-cd", "title": "OK Computer", "date": "1997-05-28", "country": "JP", "barcode": "",
      "label-info": [{"label": {"name": "Toshiba-EMI"}, "catalog-number": "TOCP-50201"}],
      "media": [{"position": 1, "format": "CD", "tracks": [{"length": 200_000}] * 12}]},
+    {"id": "rm", "title": "OK Computer", "date": "2009-03-24", "country": "GB", "barcode": "", "disambiguation": "remastered",
+     "media": [{"position": 1, "format": "CD", "tracks": [{"length": 200_000}] * 12}]},
 ]
 
 
@@ -159,6 +161,29 @@ def test_editions_panel(client, with_editions):
     assert "TOCP-50201" in html and "NODATA 02" in html and "☆" in html
 
 
+def test_preferences_order_within_a_tier_and_preselect_the_edition(client, settings, with_editions):
+    from picker.searching import ordered_candidates
+    seed()
+    set_match("alice", tier="High", editions=["rm"], earliest_date="2009-01-01")
+    set_match("bob", tier="High", editions=["uk-cd", "jp-cd"], earliest_date="1997-05-21")
+    with session() as s:
+        search = s.exec(select(Search)).one()
+        bob = s.exec(select(Candidate).where(Candidate.username == "bob")).one().id
+    html = client.get("/album/rg-1/candidates").text
+    assert html.index("bob") < html.index("alice")
+    assert "pref -" in html and "− remaster" in html  # alice's folder says remaster: the badge explains
+    # Preferences see the editions only when they are passed in.
+    editions = {e.id: e for e in __import__("picker.editions", fromlist=["editions_from_releases"]).editions_from_releases(RELEASES)}
+    assert [c.username for c in ordered_candidates(search, editions=editions)[0]] == ["bob", "alice"]
+    # The confirm form preselects the preferred of bob's two possible editions (GB over JP) and warns on remasters.
+    form = client.get(f"/candidates/{bob}/confirm").text
+    assert 'value="uk-cd" selected' in form
+    assert 'data-remaster="1"' in form and "remaster-warn\" hidden" in form
+    settings.preferred_countries = "JP, GB"
+    form = client.get(f"/candidates/{bob}/confirm").text
+    assert 'value="jp-cd" selected' in form
+
+
 def test_prefer_original_orders_within_a_tier(client, settings):
     from picker.searching import ordered_candidates
     seed()
@@ -166,6 +191,8 @@ def test_prefer_original_orders_within_a_tier(client, settings):
     set_match("bob", tier="High", editions=["orig"], earliest_date="1997-05-21")
     with session() as s:
         search = s.exec(select(Search)).one()
+    # With the edition preferences silent, prefer_original alone decides the order.
+    settings.avoid_remasters, settings.preferred_countries, settings.preferred_sources = False, "", ""
     settings.prefer_original = True
     assert [c.username for c in ordered_candidates(search)[0]] == ["bob", "alice"]
     settings.prefer_original = False  # then availability: alice has the free slot

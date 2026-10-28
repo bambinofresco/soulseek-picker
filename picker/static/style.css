@@ -145,6 +145,7 @@ table.candidates .flags .badge { margin: 0 2px 2px 0; }
 table.candidates [title] { cursor: help; }
 .badge.flag { background: var(--flag-bg); color: var(--flag); }
 .badge.weak { background: transparent; border: 1px dashed var(--border); color: var(--muted); }
+.badge.pref { margin-left: 4px; }
 .badge.src { font-weight: 600; }
 .badge.src-cd { background: var(--src-cd); }
 .badge.src-web { background: var(--src-web); }

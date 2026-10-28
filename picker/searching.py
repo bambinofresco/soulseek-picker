@@ -10,7 +10,8 @@ from sqlmodel import delete, select
 from . import albums
 from .clients import services
 from .clients.http import ServiceError
-from .config import get_settings
+from .config import Settings, get_settings
+from . import preferences
 from .db import session
 from .grouping import (
     CandidateDraft,
@@ -262,16 +263,23 @@ def _match_rank(c: Candidate) -> tuple:
     return (-TIER_RANK.get(m.get("tier") or "Unknown", 0), -(m.get("score") or 0))
 
 
-def default_key(c: Candidate, prefer_original: bool) -> tuple:
-    """Tier, then the preference setting, then availability.
+def pref_score(c: Candidate, editions: dict[str, Edition] | None, settings: Settings) -> preferences.PrefScore:
+    """The edition-preference score of a folder (what its name says plus the editions it could be)."""
+    matched = [editions[r] for r in match_of(c).get("editions") or [] if editions and r in editions]
+    return preferences.score_candidate(parsed(c), quality(c)[0], matched, settings)
+
+
+def default_key(c: Candidate, settings: Settings, editions: dict[str, Edition] | None = None) -> tuple:
+    """Tier, then the edition preferences, then prefer_original, then availability.
 
     prefer_original puts earlier editions first within a tier and remaster-flagged
-    folders below unflagged ones.
+    folders below unflagged ones; the preference score (remasters, countries, sources,
+    depth, flags) comes before it.
     """
     tier = -TIER_RANK.get(match_of(c).get("tier") or "Unknown", 0)
-    pref: tuple = ()
-    if prefer_original:
-        pref = (parsed(c).get("remaster") == "folder", match_of(c).get("earliest_date") or "9999")
+    pref: tuple = (-pref_score(c, editions, settings).score,)
+    if settings.prefer_original:
+        pref += (parsed(c).get("remaster") == "folder", match_of(c).get("earliest_date") or "9999")
     return (tier, *pref, *_availability(c))
 
 
@@ -298,11 +306,14 @@ def ordered_candidates(
     sort: str | None = None,
     reverse: bool = False,
     target: str | None = None,
+    editions: dict[str, Edition] | None = None,
 ) -> tuple[list[Candidate], int]:
     """Candidates in display order, and how many the default filter hid.
 
     The default order is tier, preference, availability; a column sort breaks ties
     with that order. `target` keeps only folders whose ambiguity set includes that edition.
+    `editions` (id -> Edition) lets the preferences see countries and formats; without it
+    only what the folder name says counts.
     """
     settings = get_settings()
     with session() as s:
@@ -320,7 +331,7 @@ def ordered_candidates(
         visible = [c for c in visible if quality(c)[0] == depth]
     if target:
         visible = [c for c in visible if target in (match_of(c).get("editions") or [])]
-    visible.sort(key=lambda c: default_key(c, settings.prefer_original))
+    visible.sort(key=lambda c: default_key(c, settings, editions))
     if sort in SORT_KEYS:
         visible.sort(key=SORT_KEYS[sort], reverse=reverse)
     return visible, hidden

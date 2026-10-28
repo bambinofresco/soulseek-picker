@@ -67,6 +67,13 @@ class Settings(BaseModel):
     # Preferences
     flac_only: bool = True
     prefer_original: bool = True
+    # Edition preferences (picker/preferences.py): order within a tier, the preselected edition, the recommendation.
+    avoid_remasters: bool = True
+    preferred_countries: str = "GB, US, XE, JP"  # ordered; XW (worldwide) counts as the first
+    preferred_sources: str = "CD, Vinyl, WEB"  # ordered; folder source or edition format
+    preferred_depth: str = "any"  # 16 | 24 | any
+    avoid_flags: str = ""  # e.g. "Deluxe, Anniversary"
+    prefer_flags: str = ""  # e.g. "MFSL, Japan"
     auto_import: bool = True  # import straight away when every check passes; otherwise wait on Review
     stuck_days: int = 3
     stall_timeout_minutes: int = 30  # bytes started flowing, then stopped
@@ -79,6 +86,14 @@ class Settings(BaseModel):
     transcode_check: bool = True  # spectrum analysis of two tracks before Review
     cutoff_db: int = 30  # how sharp a spectrum cliff must be to count as a lossy low-pass
     max_sidecar_mb: int = 15
+
+    @field_validator("preferred_depth")
+    @classmethod
+    def _depth_choice(cls, value: str) -> str:
+        value = (value or "any").strip().lower()
+        if value not in ("16", "24", "any"):
+            raise ValueError("preferred_depth must be 16, 24 or any")
+        return value
 
     @field_validator("album_folder_template")
     @classmethod

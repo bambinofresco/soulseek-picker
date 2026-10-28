@@ -1,11 +1,13 @@
 <form class="confirm" hx-post="/candidates/{{ c.id }}/download" hx-swap="outerHTML">
   <label class="small muted">Tag as edition</label>
-  <select name="release_mbid">
+  <select name="release_mbid" onchange="this.form.querySelector('.remaster-warn').hidden = !this.selectedOptions[0].dataset.remaster">
     {% if not editions %}<option value="">(editions unavailable; choose at import)</option>{% endif %}
     {% for e in editions %}
-    <option value="{{ e.id }}" {% if e.id == preselect %}selected{% endif %}>{% if e.id in likely %}✓ {% endif %}{{ e|edition }}</option>
+    <option value="{{ e.id }}"{% if e.id == preselect %} selected{% endif %}{% if e.is_remaster %} data-remaster="1"{% endif %}>{% if e.id in likely %}✓ {% endif %}{{ e|edition }}</option>
     {% endfor %}
   </select>
+  {% set chosen = editions|selectattr("id", "equalto", preselect)|first %}
+  <span class="small warn-text remaster-warn" {% if not (chosen and chosen.is_remaster) %}hidden{% endif %}>This edition is a remaster{% if avoid_remasters %} (you avoid those){% endif %}.</span>
   <span class="confirm-buttons">
     <button type="submit" class="primary">Download</button>
     <button type="button" hx-get="/candidates/{{ c.id }}/download-button" hx-target="closest form" hx-swap="outerHTML">Cancel</button>

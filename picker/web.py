@@ -17,7 +17,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlmodel import select
 
-from . import albums, health, importing, lidarr_feed, owned, prefetching, probe
+from . import albums, health, importing, lidarr_feed, owned, preferences, prefetching, probe
 from .beets import config_warnings as beets_config_warnings
 from .clients import reset_services, services
 from .clients.http import ServiceError
@@ -31,6 +31,7 @@ from .naming import FolderValues, album_folder, unknown_tokens
 from .matching import completeness, rip_quality
 from .transfers import summary as transfer_summary
 from .searching import (
+    pref_score,
     latest_search,
     match_of,
     next_best_candidate,
@@ -227,19 +228,20 @@ async def _candidates_context(rg_mbid: str, params: dict, *, with_editions: bool
         or any(d.state in ACTIVE_DOWNLOAD for d in downloads.values())
         or any(i.state in ("verifying", "refetching", "importing") for i in imports.values())
     ))
+    # While searching there is nothing to label yet; skip the (cached) editions lookup.
+    editions = {}
+    if with_editions and search and not searching_now:
+        editions = {e.id: e for e in (await _editions(rg_mbid))[0]}
+    settings = get_settings()
     if search:
-        unfiltered, hidden = ordered_candidates(search, show_all=params["all"])
+        unfiltered, hidden = ordered_candidates(search, show_all=params["all"], editions=editions)
         sources = sorted({parsed(c).get("source") or "unknown" for c in unfiltered})
         depths = sorted({d for c in unfiltered if (d := quality(c)[0])})
         candidates, _ = ordered_candidates(
             search, show_all=params["all"], source=params["source"] or None,
             depth=int(params["depth"]) if params["depth"].isdigit() else None,
-            sort=params["sort"] or None, reverse=params["rev"], target=target,
+            sort=params["sort"] or None, reverse=params["rev"], target=target, editions=editions,
         )
-    # While searching there is nothing to label yet; skip the (cached) editions lookup.
-    editions = {}
-    if with_editions and search and not searching_now:
-        editions = {e.id: e for e in (await _editions(rg_mbid))[0]}
 
     if not search:
         phase = "none"
@@ -263,6 +265,7 @@ async def _candidates_context(rg_mbid: str, params: dict, *, with_editions: bool
         "target_id": target, "rip_quality": rip_quality, "completeness": completeness, "active": active,
         "searching_now": searching_now, "disc_id_releases": prefetching.disc_id_releases,
         "phase": phase, "row_version": row_version,
+        "pref": lambda c: pref_score(c, editions, settings),
     }
 
 
@@ -343,9 +346,16 @@ async def candidate_confirm(request: Request, candidate_id: int):
     likely = match_of(candidate).get("editions") or []
     with session() as s:
         album = s.get(Album, search.rg_mbid)
-    preselect = album.target_release if album and album.target_release in likely else (likely[0] if likely else None)
+    settings = get_settings()
+    by_id = {e.id: e for e in editions}
+    preferred = preferences.best_edition([by_id[r] for r in likely if r in by_id], settings)
+    if album and album.target_release in likely:
+        preselect = album.target_release
+    else:
+        preselect = preferred.id if preferred else (likely[0] if likely else None)
     ordered = [e for e in editions if e.id in likely] + [e for e in editions if e.id not in likely]
-    return render(request, "_confirm.html", c=candidate, editions=ordered, likely=set(likely), preselect=preselect)
+    return render(request, "_confirm.html", c=candidate, editions=ordered, likely=set(likely), preselect=preselect,
+                  avoid_remasters=settings.avoid_remasters)
 
 
 @router.get("/candidates/{candidate_id}/download-button", response_class=HTMLResponse)
@@ -581,6 +591,8 @@ FORM_SECTIONS = {
         "flac_only", "prefer_original", "auto_import", "stuck_days", "stall_timeout_minutes", "queue_timeout_hours",
         "download_scans", "max_sidecar_mb", "transcode_check", "cutoff_db",
     ],
+    "Edition preferences": ["avoid_remasters", "preferred_countries", "preferred_sources", "preferred_depth",
+                            "avoid_flags", "prefer_flags"],
     "Lidarr defaults for new artists": [
         "lidarr_root_folder", "lidarr_quality_profile_id", "lidarr_metadata_profile_id",
         "lidarr_monitor", "lidarr_monitor_new_items",

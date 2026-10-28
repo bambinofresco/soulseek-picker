@@ -15,6 +15,8 @@
   <tr class="cand">
     <td class="match">
       <span class="tier tier-{{ (m.tier or 'Unknown')|lower }}" title="{% for s in m.signals or [] %}{{ '%+g'|format(s.weight) }} {{ s.detail }}{{ '\n' }}{% endfor %}">{{ m.tier or "Unknown" }}</span>
+      {% set pf = pref(c) %}
+      {% if pf.reasons %}<span class="badge pref {{ 'warn' if pf.score < 0 else 'ok' }}" title="Edition preferences:{{ '\n' }}{{ pf.reasons|join('\n') }}">pref {{ pf.label }}</span>{% endif %}
       {% if matched|length == 1 %}
         <span class="edition-name small">{{ editions.get(matched[0])|edition }}</span>
       {% elif matched %}

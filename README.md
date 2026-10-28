@@ -116,6 +116,21 @@ The one interaction: slskd refuses to enqueue a file that's already in flight fr
 - **Search more** searches the same album again for up to 3 minutes and merges new folders into the table. Rows already there keep their log results and downloads.
 - MusicBrainz editions load while slskd searches, instead of before.
 
+## Edition preferences
+
+Settings → Edition preferences decides which pressing wins when several folders match equally well. The match tiers are still the contract (Exact beats High whatever you prefer); within a tier the preference score orders the rows, picks the edition the confirm form preselects among a folder's possible editions, and feeds the recommendation. Every point comes with a reason, shown on the row's **pref** badge on hover ("+ GB", "+ CD", "− remaster").
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `avoid_remasters` | on | editions whose name says remaster, and folders flagged remaster, lose 10 points (3 when only some of a folder's possible editions are remasters); the confirm form warns when a remaster is selected |
+| `preferred_countries` | `GB, US, XE, JP` | ordered: the first earns 4 points, the next 3, and so on; `XW` (worldwide) counts as the first; the folder's territory words are used when no edition is matched |
+| `preferred_sources` | `CD, Vinyl, WEB` | ordered the same way, from the folder's source or the edition's format |
+| `preferred_depth` | `any` | `16` or `24`: that bit depth earns 2 points, the other loses 2 |
+| `avoid_flags` | empty | markers that lose 3 points each, e.g. `Deluxe, Anniversary`; matched against the folder's flags and territories and the editions' names and formats |
+| `prefer_flags` | empty | markers that earn 3 points each, e.g. `MFSL, Japan` |
+
+`prefer_original` (Preferences) still breaks ties after the score: earlier editions first, remaster-flagged folders last.
+
 ## Albums you already have
 
 Before any bandwidth is spent, the picker checks whether the album is in the library. The album page shows a banner naming the edition and where it is, from the first source that knows: the picker's own import history (if the folder still exists), Lidarr (track files present; the monitored release is the edition), or the beets library. Find-album results carry an **in library** badge from the local sources (history and beets; Lidarr is asked on the album page only). You can still search and download; the import then stops at placing because the folder exists, since the picker never overwrites anything in the library. Replacing an album you have is the upgrades phase of the spec.
