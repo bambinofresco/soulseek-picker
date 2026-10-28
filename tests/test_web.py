@@ -134,7 +134,7 @@ def test_download_records_the_confirmed_edition(client, with_editions, monkeypat
     seed()
     alice = set_match("alice", tier="Exact", editions=["jp-cd"])
     started = {}
-    monkeypatch.setattr(web, "start_download", lambda c, rg, rel: started.update(rel=rel) or
+    monkeypatch.setattr(web, "start_download", lambda c, rg, rel, **kw: started.update(rel=rel) or
                         type("D", (), {"state": "queued", "bytes_done": 0, "bytes_total": 1})())
     resp = client.post(f"/candidates/{alice}/download", data={"release_mbid": "jp-cd"})
     assert resp.status_code == 200 and started["rel"] == "jp-cd"
@@ -516,7 +516,7 @@ def test_give_up_starts_the_next_candidate(client, monkeypatch):
         s.commit()
         s.refresh(dl)
     started = []
-    monkeypatch.setattr(web, "start_download", lambda c, rg, rel: started.append(c.username))
+    monkeypatch.setattr(web, "start_download", lambda c, rg, rel, **kw: started.append(c.username))
     resp = client.post(f"/downloads/{dl.id}/giveup", follow_redirects=False)
     assert resp.status_code == 303
     with session() as s:

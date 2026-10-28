@@ -22,11 +22,12 @@ import errno
 import os
 import posixpath
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 from sqlmodel import select
 
-from . import albums, audio, beets, library, queueing, ripverify, tagcheck
+from . import albums, audio, beets, library, preferences, queueing, ripverify, tagcheck
 from .clients import services
 from .clients.http import ServiceError
 from .config import Settings, get_settings
@@ -126,7 +127,7 @@ def start_import(dl: Download) -> Import:
 
     imp = Import(
         download_id=dl.id, rg_mbid=dl.rg_mbid, release_mbid=dl.release_mbid, username=dl.username,
-        source_dir=str(landed_dir(dl, get_settings())),
+        source_dir=str(landed_dir(dl, get_settings())), upgrade_of=dl.upgrade_of,
     )
     with session() as s:
         s.add(imp)
@@ -322,6 +323,11 @@ def review_reason(imp: Import, settings: Settings) -> str | None:
         return "the files are tagged as several different releases"
     if settings.rip_verify and (imp.rip_check or {}).get("mismatched"):
         return "a track differs from the verified rip"
+    if imp.upgrade_of:
+        if not settings.auto_upgrade:
+            return "it replaces the copy you have (auto_upgrade is off)"
+        if not (imp.upgrade_check or {}).get("better"):
+            return "the new copy is not clearly better than the one you have"
     return None
 
 
@@ -332,6 +338,8 @@ async def _pipeline(imp: Import) -> None:
         _save(imp, step="tags")
     if imp.step == "tags":
         await _check_tags(imp)
+        if imp.upgrade_of:
+            _save(imp, upgrade_check=await compare_upgrade(imp, settings))
         hold = review_reason(imp, settings)
         if hold:
             _save(imp, step="review", state="review")
@@ -454,22 +462,77 @@ async def _artist_dir(imp: Import, album: Album, settings: Settings) -> Path:
     return path
 
 
-def _place(imp: Import, target: Path) -> None:
-    src = Path(imp.source_dir or "")
-    if imp.album_dir and Path(imp.album_dir).is_dir() and not src.exists():
-        _save(imp, step="beets")  # placed before a restart
-        return
-    if target.exists():
-        raise Blocked(f"{target} already exists; the picker never overwrites. Move or rename it, then Retry")
-    if not src.is_dir():
-        raise JobFailed(f"the downloaded folder {src} is gone")
+def _move(src: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         os.rename(src, target)
     except OSError as exc:
         if exc.errno != errno.EXDEV:
             raise
-        shutil.move(str(src), str(target))  # different filesystems: copy, then remove the download
+        shutil.move(str(src), str(target))  # different filesystems: copy, then remove the source
+
+
+def folder_bytes(folder: Path) -> int:
+    return sum(p.stat().st_size for p in folder.rglob("*") if p.is_file())
+
+
+def free_space_check(src: Path, dest_root: Path) -> str | None:
+    """Why the move might not fit (None when it fits): a rename needs nothing, a copy across
+    filesystems needs the folder's size, and Unraid user shares can turn a rename into a copy."""
+    probe = dest_root
+    while not probe.exists() and probe.parent != probe:
+        probe = probe.parent
+    try:
+        free = shutil.disk_usage(probe).free
+    except OSError:
+        return None
+    need = folder_bytes(src) + 100_000_000
+    if free < need:
+        return f"not enough free space under {dest_root}: {free / 1e9:.1f} GB free, {need / 1e9:.1f} GB needed"
+    return None
+
+
+def replaced_target(old: Path, settings: Settings, marker: str = "") -> Path:
+    stamp = datetime.now().strftime("%Y-%m-%d %H%M")
+    return settings.replaced_dir / old.parent.name / f"{old.name} ({marker + ' ' if marker else ''}{stamp})"
+
+
+def _retire_old_copy(imp: Import, settings: Settings, src: Path) -> None:
+    """An upgrade: move the copy being replaced out of the library to the replaced folder.
+
+    Never deleted by the picker. The Settings page shows the folder's size and offers the only
+    deletion the picker performs, by an explicit click.
+    """
+    old = Path(imp.upgrade_of)
+    if imp.replaced_dir:
+        return  # already moved (a retry after a block)
+    if not old.is_dir():
+        _note(imp, f"The copy to replace, {old}, was already gone")
+        return
+    if not within(old, settings.music_dir) or old.resolve() == settings.music_dir.resolve():
+        raise Blocked(f"refusing to replace {old}: it is not an album folder inside {settings.music_dir}")
+    short = free_space_check(src, settings.music_dir)
+    if short:
+        raise Blocked(short)
+    parked = replaced_target(old, settings)
+    _move(old, parked)
+    library.forget_folder(old)
+    _save(imp, replaced_dir=str(parked))
+    log_event(imp.job_id, imp.rg_mbid, f"Moved the old copy {old} to {parked}")
+
+
+def _place(imp: Import, target: Path) -> None:
+    src = Path(imp.source_dir or "")
+    if imp.album_dir and Path(imp.album_dir).is_dir() and not src.exists():
+        _save(imp, step="beets")  # placed before a restart
+        return
+    if not src.is_dir():
+        raise JobFailed(f"the downloaded folder {src} is gone")
+    if imp.upgrade_of:
+        _retire_old_copy(imp, get_settings(), src)
+    if target.exists():
+        raise Blocked(f"{target} already exists; the picker never overwrites. Move or rename it, then Retry")
+    _move(src, target)
     _save(imp, album_dir=str(target), step="beets")
     log_event(imp.job_id, imp.rg_mbid, f"Placed at {target}")
 
@@ -479,6 +542,8 @@ async def _beets(imp: Import, settings: Settings) -> bool:
     if imp.source == "lidarr" and not settings.beets_pretend:
         # A re-imported or upgraded album may already be in the beets library: start clean.
         await beets.forget_album(settings, imp.release_mbid, album_dir)
+    if imp.upgrade_of and imp.replaced_dir and not settings.beets_pretend:
+        await beets.forget_path(settings, Path(imp.upgrade_of))  # the replaced copy leaves the beets library
     result = await beets.import_album(settings, album_dir, imp.release_mbid, force=imp.force,
                                       pretend=settings.beets_pretend)
     _save(imp, beets_output=result.output)
@@ -557,6 +622,145 @@ async def _scan_plex(imp: Import, settings: Settings) -> None:
             _note(imp, f"Plex scan failed: {exc.message}")
     if not asked:
         _note(imp, "Neither autoscan nor Plex is configured; the library scan is left to Plex's own watcher")
+
+
+# Upgrades (spec 7.2) --------------------------------------------------------------------------
+
+def _most_common(values: list) -> object | None:
+    values = [v for v in values if v]
+    return max(set(values), key=values.count) if values else None
+
+
+async def compare_upgrade(imp: Import, settings: Settings) -> dict:
+    """Old copy (from the library index) against the new one (from the download), for the Review
+    page and for auto_upgrade. `better` means strictly better on at least one count and worse on none."""
+    old_files = library.folder_files(imp.upgrade_of) if imp.upgrade_of else []
+    old = {
+        "path": imp.upgrade_of, "tracks": len(old_files),
+        "depth": max((f.bit_depth or 0 for f in old_files), default=0) or None,
+        "rate": max((f.sample_rate or 0 for f in old_files), default=0) or None,
+        "size": sum(f.size for f in old_files), "release": _most_common([f.release_mbid for f in old_files]),
+    }
+    with session() as s:
+        dl = s.get(Download, imp.download_id) if imp.download_id else None
+        cand = s.get(Candidate, dl.candidate_id) if dl else None
+        album = s.get(Album, imp.rg_mbid)
+    parsed = (cand.parsed or {}) if cand else {}
+    new = {
+        "tracks": cand.audio_count if cand else len(audio.audio_files(Path(imp.source_dir or ""))),
+        "depth": (cand.bit_depth or parsed.get("bit_depth")) if cand else None,
+        "rate": (cand.sample_rate or parsed.get("sample_rate")) if cand else None,
+        "size": dl.bytes_total if dl else None, "release": imp.release_mbid,
+    }
+    try:
+        editions = {e.id: e for e in await albums.album_editions(imp.rg_mbid)}
+    except ServiceError:
+        editions = {}
+    for side in (old, new):
+        edition = editions.get(side["release"] or "")
+        side["pref"] = preferences.score_edition(edition, settings).score if edition else None
+        side["edition"] = f"{edition.date or ''} {edition.country or ''} {edition.format_summary or ''}".strip() if edition else None
+    expected = album.min_track_count if album and album.min_track_count else None
+    old["complete"] = bool(expected and old["tracks"] >= expected)
+    new["complete"] = bool(expected and new["tracks"] >= expected)
+    reasons, worse = [], []
+    if old["pref"] is not None and new["pref"] is not None:
+        if new["pref"] > old["pref"]:
+            reasons.append(f"preferred edition ({new['pref']:+d} vs {old['pref']:+d})")
+        elif new["pref"] < old["pref"]:
+            worse.append(f"less preferred edition ({new['pref']:+d} vs {old['pref']:+d})")
+    if new["complete"] and not old["complete"]:
+        reasons.append(f"complete ({new['tracks']} tracks vs {old['tracks']})")
+    elif new["tracks"] < old["tracks"]:
+        worse.append(f"fewer tracks ({new['tracks']} vs {old['tracks']})")
+    if old["depth"] and new["depth"]:
+        if new["depth"] > old["depth"]:
+            reasons.append(f"{new['depth']}-bit vs {old['depth']}-bit")
+        elif new["depth"] < old["depth"]:
+            worse.append(f"{new['depth']}-bit vs {old['depth']}-bit")
+    if old["pref"] is None and old["release"] is None:
+        worse.append("the old copy's edition is unknown (no MusicBrainz tags)")
+    return {"old": old, "new": new, "better": bool(reasons) and not worse, "reasons": reasons, "worse": worse}
+
+
+def request_undo(imp: Import) -> None:
+    """Put the replaced copy back; the new one goes to the replaced folder instead."""
+    if not imp.upgrade_of or not imp.replaced_dir or imp.upgrade_undone:
+        raise Blocked("there is no replaced copy to put back")
+    if not Path(imp.replaced_dir).is_dir():
+        raise Blocked(f"the replaced copy is no longer at {imp.replaced_dir}")
+    if not imp.album_dir or not Path(imp.album_dir).is_dir():
+        raise Blocked("the new copy is not in the library (yet)")
+    if Path(imp.upgrade_of).exists() and Path(imp.upgrade_of).resolve() != Path(imp.album_dir).resolve():
+        raise Blocked(f"{imp.upgrade_of} exists again; move it away first")
+    worker.enqueue("undo_upgrade", {"import_id": imp.id}, rg_mbid=imp.rg_mbid)
+
+
+@handler("undo_upgrade")
+async def run_undo(job: Job) -> None:
+    settings = get_settings()
+    with session() as s:
+        imp = s.get(Import, job.payload["import_id"])
+    new_dir, old_dir, parked = Path(imp.album_dir), Path(imp.upgrade_of), Path(imp.replaced_dir)
+    if not parked.is_dir():
+        raise JobFailed(f"the replaced copy is no longer at {parked}")
+    new_parked = replaced_target(new_dir, settings, "undone")
+    _move(new_dir, new_parked)
+    _move(parked, old_dir)
+    log_event(job.id, imp.rg_mbid, f"Put {old_dir} back; the new copy is at {new_parked}")
+    library.forget_folder(new_dir)
+    library.scan(old_dir, settings)
+    if not settings.beets_pretend:
+        await beets.forget_path(settings, new_dir)
+        old_release = _most_common([f.release_mbid for f in library.folder_files(old_dir)])
+        if old_release:
+            result = await beets.import_album(settings, old_dir, old_release)
+            if not result.imported:
+                _note(imp, "beets did not take the old copy back into its library; its files are untouched")
+        else:
+            _note(imp, "the old copy carries no MusicBrainz release ID, so beets was not told about it")
+    _save(imp, upgrade_undone=True, state="undone", album_dir=str(old_dir), replaced_dir=str(new_parked),
+          finished_at=utcnow())
+    _note(imp, f"Upgrade undone: {old_dir} is back, the new copy is parked at {new_parked}")
+    if settings.lidarr_api_key:
+        try:
+            cmd = await services().lidarr.command("RescanFolders", folders=[str(old_dir.parent)], filter="matched")
+            await services().lidarr.wait_for_command(cmd["id"])
+        except ServiceError as exc:
+            _note(imp, f"Lidarr rescan after the undo failed: {exc.message}")
+    await _scan_plex(imp, settings)
+    item = queueing.item_for_download(imp.download_id) if imp.download_id else None
+    if item is not None and item.playlist_id:
+        from . import plexsync  # imported here: plexsync imports playlists, which this module must not
+
+        plexsync.queue_sync(item.playlist_id)
+
+
+def replaced_summary(settings: Settings) -> dict:
+    root = settings.replaced_dir
+    folders = [p for p in root.glob("*/*") if p.is_dir()] if root.is_dir() else []
+    size = sum(folder_bytes(f) for f in folders)
+    oldest = min((f.stat().st_mtime for f in folders), default=None)
+    return {"path": str(root), "folders": len(folders), "bytes": size,
+            "oldest": datetime.fromtimestamp(oldest).date().isoformat() if oldest else None}
+
+
+def delete_replaced(settings: Settings, older_than_days: int) -> int:
+    """The one deletion the picker performs, and only by an explicit click: replaced copies older than N days."""
+    root = settings.replaced_dir
+    if not root.is_dir() or older_than_days < 0:
+        return 0
+    cutoff = datetime.now().timestamp() - older_than_days * 86400
+    removed = 0
+    for folder in [p for p in root.glob("*/*") if p.is_dir()]:
+        if not within(folder, root) or folder.stat().st_mtime > cutoff:
+            continue
+        shutil.rmtree(folder)
+        removed += 1
+        parent = folder.parent
+        if parent != root and parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
+    return removed
 
 
 WAITING_STATES = ("review", "skipped", "blocked")

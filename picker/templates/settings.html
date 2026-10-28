@@ -46,6 +46,18 @@
   <button type="submit" class="primary">Save</button>
 </form>
 
+<section class="card replaced">
+  <h2>Replaced copies</h2>
+  <p class="small muted">When an upgrade replaces an album, the old copy is moved to <span class="mono">{{ replaced.path }}</span> and never deleted by the picker.
+    {% if replaced.folders %}It holds {{ replaced.folders }} folder{{ "s" if replaced.folders != 1 }}, {{ (replaced.bytes / 1e9)|round(1) }} GB, the oldest from {{ replaced.oldest }}.{% else %}It is empty.{% endif %}</p>
+  {% if replaced.folders %}
+  <form method="post" action="/settings/replaced/delete" class="inline-form" onsubmit="return confirm('Delete replaced copies older than the given number of days? This is the only thing the picker ever deletes.')">
+    <label class="small">Delete copies older than <input type="number" name="days" value="30" min="0" style="width:5em"> days</label>
+    <button class="danger small">Delete</button>
+  </form>
+  {% endif %}
+</section>
+
 <section class="card probe">
   <h2>Probe the real services</h2>
   <p class="small muted">Runs only read-style calls against slskd, Lidarr and Plex (plus one small Soulseek search it deletes

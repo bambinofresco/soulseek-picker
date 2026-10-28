@@ -82,6 +82,9 @@ class Settings(BaseModel):
     queue_concurrency: int = 2  # downloads the queue runs at once
     queue_candidates: int = 3  # folders tried per album before it is given up
     queue_retry_days: int = 7  # wait before searching again for an album nothing was found for
+    # Upgrades (replacing an album already in the library): the old copy is moved here, never deleted by the picker.
+    replaced_dir: Path = Path("/mediadata/media/replaced")
+    auto_upgrade: bool = False  # replace without a review when the new copy passes every check and is clearly better
     stuck_days: int = 3
     stall_timeout_minutes: int = 30  # bytes started flowing, then stopped
     queue_timeout_hours: int = 6  # waiting in the uploader's queue

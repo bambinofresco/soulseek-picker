@@ -48,7 +48,7 @@ def world(settings, monkeypatch):
             s.refresh(row)
         return row
 
-    def fake_start_download(candidate, rg, release=None):
+    def fake_start_download(candidate, rg, release=None, upgrade_of=None):
         with session() as s:
             dl = Download(candidate_id=candidate.id, search_id=candidate.search_id, rg_mbid=rg, username=candidate.username,
                           folder=candidate.folder, release_mbid=release, destination=f"picker/{candidate.id}", state="queued")

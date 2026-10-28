@@ -8,6 +8,10 @@
   </select>
   {% set chosen = editions|selectattr("id", "equalto", preselect)|first %}
   <span class="small warn-text remaster-warn" {% if not (chosen and chosen.is_remaster) %}hidden{% endif %}>This edition is a remaster{% if avoid_remasters %} (you avoid those){% endif %}.</span>
+  {% if owned_path %}
+  <label class="small"><input type="checkbox" name="upgrade_of" value="{{ owned_path }}"> Replace my copy at <span class="mono">{{ owned_path }}</span>
+    <span class="muted">(it is moved to the replaced folder, never deleted; the import waits for your confirmation unless auto_upgrade is on)</span></label>
+  {% endif %}
   <span class="confirm-buttons">
     <button type="submit" class="primary">Download</button>
     <button type="button" hx-get="/candidates/{{ c.id }}/download-button" hx-target="closest form" hx-swap="outerHTML">Cancel</button>

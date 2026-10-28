@@ -192,6 +192,11 @@ async def album_list(settings: Settings) -> dict[str, dict]:
     return albums
 
 
+async def forget_path(settings: Settings, album_dir: Path) -> None:
+    """Drop whatever library entry sits at this folder (never the files): an upgrade's replaced copy."""
+    await _beet(settings, ["remove", "-a", "-f", f"path:{album_dir}"], 60)
+
+
 async def forget_album(settings: Settings, release_mbid: str, album_dir: Path) -> None:
     """Drop the library entry (never the files) so a retag starts clean."""
     for path in await album_paths(settings, release_mbid):

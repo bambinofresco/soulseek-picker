@@ -19,7 +19,12 @@
       {% if have_edition %}The {{ have_edition|edition }} edition{% elif have.release_mbid %}Edition <span class="mono">{{ have.release_mbid[:8] }}</span>{% else %}An edition{% endif %}
       {% if have.source == "picker" %}was imported by the picker{% elif have.source == "lidarr" %}is in Lidarr{% if have.have is not none and have.want %} with {{ have.have }} of {{ have.want }} track files{% endif %}{% elif have.source == "index" %}is on disk{% if have.have %} ({{ have.have }} tagged files){% endif %}{% else %}is in the beets library{% endif %}{% if have.path %}, at <span class="mono">{{ have.path }}</span>{% endif %}.</p>
     <p class="small muted">Downloading another copy stops at placing because that folder exists; the picker never overwrites or deletes in the library.
-      {% if have.import_id %}<a href="/imports/{{ have.import_id }}">Its import</a>.{% endif %}</p>
+      {% if have.import_id %}<a href="/imports/{{ have.import_id }}">Its import</a>.{% endif %}
+      To replace it, tick <em>Replace my copy</em> when you download a folder below, or let the queue pick one:</p>
+    {% if not queue_item %}
+    <form class="inline-form" method="post" action="/queue/add"><input type="hidden" name="rg_mbid" value="{{ album.rg_mbid }}"><input type="hidden" name="mode" value="upgrade"><input type="hidden" name="source" value="album"><button class="small">Upgrade</button></form>
+    <span class="small muted">The old copy is moved to the replaced folder, never deleted; the import waits for your confirmation unless auto_upgrade is on.</span>
+    {% endif %}
   </div>
   {% endif %}
 </section>

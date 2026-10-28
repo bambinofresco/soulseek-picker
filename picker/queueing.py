@@ -391,7 +391,8 @@ async def _decide(item: QueueItem, settings: Settings) -> bool:
     if len({score_edition(e, settings).score for e in matched}) > 1:
         _needs_pick(item, f"{best.candidate.username}'s folder could be one of {len(matched)} editions the preferences rank differently")
         return False
-    dl = start_download(best.candidate, item.rg_mbid, best.edition.id)
+    upgrade_of = (item.owned or {}).get("path") if item.mode == "upgrade" else None
+    dl = start_download(best.candidate, item.rg_mbid, best.edition.id, upgrade_of=upgrade_of)
     _save(item, state="downloading", download_id=dl.id, candidates_tried=sorted(tried | {best.candidate.id}),
           note=f"downloading {best.candidate.username}'s folder ({best.tier}) as the {best.edition.date or ''} {best.edition.country or ''} edition".replace("  ", " "))
     _event(item, f"picked {best.candidate.username}'s folder: {summary}")
@@ -409,7 +410,7 @@ def _next_candidate(item: QueueItem, dl: Download, settings: Settings, why: str)
         _save(item, state="failed", candidates_tried=sorted(tried), note=f"{why}; no other folder could be this edition")
         _event(item, f"{why}; no other folder could be this edition")
         return
-    new = start_download(candidate, item.rg_mbid, dl.release_mbid)
+    new = start_download(candidate, item.rg_mbid, dl.release_mbid, upgrade_of=dl.upgrade_of)
     _save(item, state="downloading", download_id=new.id, import_id=None, candidates_tried=sorted(tried),
           note=f"{why}; trying {candidate.username}'s folder next")
     _event(item, f"{why}; trying {candidate.username}'s folder next")

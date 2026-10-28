@@ -366,8 +366,9 @@ async def candidate_confirm(request: Request, candidate_id: int):
     else:
         preselect = preferred.id if preferred else (likely[0] if likely else None)
     ordered = [e for e in editions if e.id in likely] + [e for e in editions if e.id not in likely]
+    have = (await owned.owned_release_groups([search.rg_mbid], settings)).get(search.rg_mbid)
     return render(request, "_confirm.html", c=candidate, editions=ordered, likely=set(likely), preselect=preselect,
-                  avoid_remasters=settings.avoid_remasters)
+                  avoid_remasters=settings.avoid_remasters, owned_path=have.path if have and have.path else None)
 
 
 @router.get("/candidates/{candidate_id}/download-button", response_class=HTMLResponse)
@@ -385,7 +386,8 @@ async def candidate_download(request: Request, candidate_id: int):
         existing = s.exec(
             select(Download).where(Download.candidate_id == candidate_id, Download.state.in_(ACTIVE_DOWNLOAD))
         ).first()
-    dl = existing or start_download(candidate, search.rg_mbid, release_mbid)
+    upgrade_of = str(form.get("upgrade_of") or "") or None  # "Replace my copy" on the confirm form
+    dl = existing or start_download(candidate, search.rg_mbid, release_mbid, upgrade_of=upgrade_of)
     response = render(request, "_download_status.html", dl=dl)
     response.headers["HX-Trigger"] = "candidates-changed"  # keep the row's status updating
     return response
@@ -527,6 +529,7 @@ async def import_page(request: Request, import_id: int, error: str | None = None
         tagged=by_id.get((imp.tag_check or {}).get("tagged_mbid") or ""), by_id=by_id,
         editions=[e for e in editions if e.id in likely] + [e for e in editions if e.id not in likely],
         likely=set(likely), error=error, active=imp.state in ("verifying", "refetching", "importing"),
+        replaced_exists=bool(imp.replaced_dir and Path(imp.replaced_dir).is_dir()),
     )
 
 
@@ -571,6 +574,8 @@ async def import_action(request: Request, import_id: int, action: str):
             importing.refetch(imp, names=list((imp.rip_check or {}).get("mismatched") or []))
         elif action == "edition":
             importing.change_edition(imp, str(form.get("release_mbid") or ""))
+        elif action == "undo":
+            importing.request_undo(imp)
         elif action == "reject":
             importing.reject(imp)
             if imp.download_id:
@@ -815,6 +820,7 @@ FORM_SECTIONS = {
     "Edition preferences": ["avoid_remasters", "preferred_countries", "preferred_sources", "preferred_depth",
                             "avoid_flags", "prefer_flags"],
     "Queue": ["auto_pick_min_tier", "queue_concurrency", "queue_candidates", "queue_retry_days"],
+    "Upgrades": ["auto_upgrade", "replaced_dir"],
     "Lidarr defaults for new artists": [
         "lidarr_root_folder", "lidarr_quality_profile_id", "lidarr_metadata_profile_id",
         "lidarr_monitor", "lidarr_monitor_new_items",
@@ -838,6 +844,7 @@ async def settings_page(request: Request, saved: bool = False, error: str | None
     return render(
         request, "settings.html",
         settings=get_settings(), sections=FORM_SECTIONS, section_service=SECTION_SERVICE,
+        replaced=importing.replaced_summary(get_settings()),
         field_type=_field_type, locked=env_locked(), saved=saved, error=error,
         slskd_dir_warning=health.slskd_dir_warning,
     )
@@ -870,6 +877,18 @@ EXAMPLE_FOLDER = FolderValues(
     album_mbid="b1392450-e666-3926-a536-22c65f834433", artist_mbid="a74b1b7f-71a5-4011-9441-d0b5e4122711",
     catalog_number="CDP 7243 8 55229 2 5", label="Capitol Records", country="US", media="CD", edition_date="1997-07-01",
 )
+
+
+@router.post("/settings/replaced/delete")
+async def settings_delete_replaced(request: Request):
+    """The one deletion the picker performs: replaced copies older than N days, by this click."""
+    form = await request.form()
+    try:
+        days = int(form.get("days") or 30)
+    except ValueError:
+        days = 30
+    removed = importing.delete_replaced(get_settings(), days)
+    return RedirectResponse(f"/settings?{urlencode({'saved': 'false', 'error': f'Deleted {removed} replaced cop{"y" if removed == 1 else "ies"} older than {days} days'})}" if removed else "/settings", status_code=303)
 
 
 @router.post("/settings/folder-preview", response_class=HTMLResponse)

@@ -53,7 +53,9 @@ def files_to_fetch(candidate: Candidate, settings: Settings) -> list[dict]:
     return out
 
 
-def start_download(candidate: Candidate, rg_mbid: str, release_mbid: str | None = None) -> Download:
+def start_download(candidate: Candidate, rg_mbid: str, release_mbid: str | None = None,
+                   upgrade_of: str | None = None) -> Download:
+    """`upgrade_of`: the library folder this download replaces once it passes (spec 7.2)."""
     settings = get_settings()
     files = files_to_fetch(candidate, settings)
     with session() as s:
@@ -62,6 +64,7 @@ def start_download(candidate: Candidate, rg_mbid: str, release_mbid: str | None 
             search_id=candidate.search_id,
             rg_mbid=rg_mbid,
             release_mbid=release_mbid,
+            upgrade_of=upgrade_of,
             username=candidate.username,
             folder=candidate.folder,
             destination="",

@@ -57,6 +57,30 @@
   {% elif check.kind == "same" %}
     <p class="small muted">The files already carry this edition's MusicBrainz ID.</p>
   {% endif %}
+  {% if imp.upgrade_of %}
+  {% set u = imp.upgrade_check or {} %}
+  <div class="banner {{ 'ok' if u.better else 'warn' }} upgrade">
+    <p><strong>{% if imp.upgrade_undone %}Upgrade undone.{% elif imp.state == "imported" %}This replaced your copy{% else %}This replaces your copy{% endif %}</strong> at <span class="mono">{{ imp.upgrade_of }}</span>{% if imp.replaced_dir %}, now at <span class="mono">{{ imp.replaced_dir }}</span>{% endif %}.
+      {% if u.reasons %}Better: {{ u.reasons|join(", ") }}.{% endif %}{% if u.worse %} <span class="warn-text">Not better: {{ u.worse|join(", ") }}.</span>{% endif %}</p>
+    {% if u.old %}
+    <table class="grid compare small">
+      <thead><tr><th></th><th>Your copy</th><th>New copy</th></tr></thead>
+      <tbody>
+        <tr><th>Edition</th><td>{{ u.old.edition or (u.old.release[:8] if u.old.release else "unknown") }}</td><td>{{ u.new.edition or (u.new.release[:8] if u.new.release else "unknown") }}</td></tr>
+        <tr><th>Preference score</th><td>{{ "%+d"|format(u.old.pref) if u.old.pref is not none else "?" }}</td><td>{{ "%+d"|format(u.new.pref) if u.new.pref is not none else "?" }}</td></tr>
+        <tr><th>Tracks</th><td>{{ u.old.tracks }}{% if u.old.complete %} (complete){% endif %}</td><td>{{ u.new.tracks }}{% if u.new.complete %} (complete){% endif %}</td></tr>
+        <tr><th>Format</th><td>{{ u.old.depth or "?" }}/{{ u.old.rate|khz }}</td><td>{{ u.new.depth or "?" }}/{{ u.new.rate|khz }}</td></tr>
+        <tr><th>Size</th><td>{{ u.old.size|mb }}</td><td>{{ u.new.size|mb if u.new.size else "?" }}</td></tr>
+      </tbody>
+    </table>
+    {% endif %}
+    {% if imp.state == "imported" and replaced_exists and not imp.upgrade_undone %}
+    <form method="post" action="/imports/{{ imp.id }}/undo" class="inline-form" onsubmit="return confirm('Put the old copy back? The new one moves to the replaced folder; nothing is deleted.')">
+      <button>Put the old copy back</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
   {% if imp.state in ("review", "skipped", "blocked", "failed") and editions %}
   <details class="change-edition" {% if not imp.release_mbid %}open{% endif %}>
     <summary class="small">{% if imp.release_mbid %}Change…{% else %}Choose the edition{% endif %}</summary>
