@@ -396,6 +396,32 @@ def test_review_page_shows_rip_verification(client, with_editions, settings):
     assert "verified rip" in client.get("/history").text
 
 
+def test_old_skips_are_explained_on_demand(client, with_editions, monkeypatch):
+    from picker import web
+    from picker.models import Import
+    seed()
+    with session() as s:
+        imp = Import(rg_mbid="rg-1", release_mbid="jp-cd", username="alice", state="skipped", step="beets",
+                     album_dir="/music/Radiohead/OK Computer (1997)", beets_output="Skipping.")
+        s.add(imp)
+        s.commit()
+        s.refresh(imp)
+    html = client.get(f"/imports/{imp.id}").text
+    assert f'hx-get="/imports/{imp.id}/explain"' in html
+
+    async def fake(settings, album_dir, release):
+        assert str(album_dir).endswith("OK Computer (1997)") and release == "jp-cd"
+        return {"similarity": 0.7, "threshold": 0.9, "penalties": [], "tracks": [], "missing": [], "unmatched": [],
+                "album": "Radiohead - OK Computer", "release": "jp-cd"}
+
+    monkeypatch.setattr(web, "beets_explain_skip", fake)
+    frag = client.get(f"/imports/{imp.id}/explain").text
+    assert "beets rated the match 70.0%" in frag
+    with session() as s:
+        assert s.get(Import, imp.id).beets_match["similarity"] == 0.7
+    assert "hx-get" not in client.get(f"/imports/{imp.id}").text.split("Why beets skipped it")[1][:200]
+
+
 def test_review_page_explains_a_beets_skip(client, with_editions):
     from picker.models import Import
     seed()

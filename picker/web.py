@@ -18,7 +18,7 @@ from pydantic import ValidationError
 from sqlmodel import select
 
 from . import albums, health, importing, lidarr_feed, owned, preferences, prefetching, probe, recommend, ripverify
-from .beets import config_warnings as beets_config_warnings
+from .beets import config_warnings as beets_config_warnings, explain_skip as beets_explain_skip
 from .clients import reset_services, services
 from .clients.http import ServiceError
 from .clients.musicbrainz import parse_mb_url
@@ -523,6 +523,22 @@ async def import_page(request: Request, import_id: int, error: str | None = None
         editions=[e for e in editions if e.id in likely] + [e for e in editions if e.id not in likely],
         likely=set(likely), error=error, active=imp.state in ("verifying", "refetching", "importing"),
     )
+
+
+@router.get("/imports/{import_id}/explain", response_class=HTMLResponse)
+async def import_explain(request: Request, import_id: int):
+    """Work out why beets skipped an import that was skipped before the picker recorded it."""
+    imp = _import(import_id)
+    if imp.beets_match is None and imp.state == "skipped" and imp.album_dir and imp.release_mbid:
+        explanation = await beets_explain_skip(get_settings(), Path(imp.album_dir), imp.release_mbid)
+        with session() as s:
+            row = s.get(Import, import_id)
+            row.beets_match = explanation
+            s.add(row)
+            s.commit()
+        imp = _import(import_id)
+    html = templates.env.get_template("_beets_match.html").render(imp=imp) if imp.beets_match else '<p class="small muted">Nothing to explain.</p>'
+    return HTMLResponse("<h2>Why beets skipped it</h2>" + html)
 
 
 @router.get("/imports/{import_id}/spectrogram/{name}")

@@ -153,6 +153,11 @@
   <h2>Why beets skipped it</h2>
   {% include "_beets_match.html" %}
 </section>
+{% elif imp.state == "skipped" and imp.album_dir and imp.release_mbid %}
+<section class="card" id="beets-explain" hx-get="/imports/{{ imp.id }}/explain" hx-trigger="load" hx-swap="innerHTML">
+  <h2>Why beets skipped it</h2>
+  <p class="small muted"><span class="spinner small-spinner"></span> Asking beets' matcher what differed (this import was skipped before the picker recorded that)…</p>
+</section>
 {% endif %}
 
 {% if imp.beets_output %}
