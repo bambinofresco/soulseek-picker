@@ -2,7 +2,7 @@
 
 Steps, each recorded on the Import row so a restart resumes where it stopped:
 
-    verify   file count, flac -t, mutagen; spectrograms for review
+    verify   file count, flac -t, mutagen; spectrograms, spectrum check, rip verification
     tags     the uploader's tags against the chosen edition (a different edition holds for review)
     review   wait for Import / Change edition / Reject (skipped when auto_import is on and every check passed)
     artist   make sure Lidarr has the artist; read its folder
@@ -26,7 +26,7 @@ from pathlib import Path
 
 from sqlmodel import select
 
-from . import albums, audio, beets, tagcheck
+from . import albums, audio, beets, ripverify, tagcheck
 from .clients import services
 from .clients.http import ServiceError
 from .config import Settings, get_settings
@@ -180,8 +180,9 @@ def _landed_root(path: Path, picker_root: Path) -> Path | None:
     return picker_root / rel.parts[0] if rel.parts else None
 
 
-def refetch(imp: Import) -> Import:
-    """Delete the files that failed the integrity check and download just those again.
+def refetch(imp: Import, names: list[str] | None = None) -> Import:
+    """Delete the files that failed the integrity check (or the named files, e.g. the ones
+    rip verification called out) and download just those again.
 
     The damaged copies must go first: slskd renames a download whose name already exists
     (name_<ticks>.flac). Only files inside the download directory's picker/ folder are deleted.
@@ -189,7 +190,12 @@ def refetch(imp: Import) -> Import:
     from . import downloading  # imported here: downloading imports this module
 
     settings = get_settings()
-    bad = [r for r in imp.integrity or [] if not r.get("ok") and r.get("path")]
+    if names is not None:
+        bad = [r for r in imp.integrity or [] if r.get("name") in names and r.get("path")]
+        if not bad:
+            raise Blocked("none of those files is in the integrity list")
+    else:
+        bad = [r for r in imp.integrity or [] if not r.get("ok") and r.get("path")]
     if not bad:
         raise Blocked("no file failed the integrity check")
     if imp.album_dir:
@@ -212,10 +218,10 @@ def refetch(imp: Import) -> Import:
     for path, _ in targets:
         path.unlink(missing_ok=True)
     downloading.refetch_files(dl.id, [remote for _, remote in targets], imp.id)
-    names = ", ".join(path.name for path, _ in targets)
+    listed = ", ".join(path.name for path, _ in targets)
     _save(imp, state="refetching", step="verify", refetches=(imp.refetches or 0) + 1, error=None)
-    log_event(imp.job_id, imp.rg_mbid, f"{names} failed the integrity check ({bad[0].get('detail')}); "
-                                       f"downloading {'it' if len(targets) == 1 else 'them'} again from {dl.username}")
+    why = "differed from the verified rip" if names is not None else f"failed the integrity check ({bad[0].get('detail')})"
+    log_event(imp.job_id, imp.rg_mbid, f"{listed} {why}; downloading {'it' if len(targets) == 1 else 'them'} again from {dl.username}")
     return imp
 
 
@@ -294,6 +300,8 @@ def review_reason(imp: Import, settings: Settings) -> str | None:
         return "the files are tagged as a different edition"
     if kind == "mixed":
         return "the files are tagged as several different releases"
+    if settings.rip_verify and (imp.rip_check or {}).get("mismatched"):
+        return "a track differs from the verified rip"
     return None
 
 
@@ -367,6 +375,12 @@ async def _verify(imp: Import, settings: Settings) -> None:
         _save(imp, transcode=transcode)
         if transcode["album"]["kind"] in ("lossy", "upsampled"):
             log_event(imp.job_id, imp.rg_mbid, f"Possible transcode: {transcode['album']['detail']}")
+    if settings.rip_verify:
+        # A signal, not a gate, except for a track that fails while its siblings verify.
+        rip = await ripverify.verify_folder(root, audio.audio_files(root), settings)
+        _save(imp, rip_check=rip)
+        if rip.get("applicable"):
+            log_event(imp.job_id, imp.rg_mbid, f"Rip verification: {rip['summary']}")
 
 
 async def _check_tags(imp: Import) -> None:

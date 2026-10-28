@@ -359,6 +359,43 @@ def test_review_list_shows_everything_waiting_with_inline_buttons(client, with_e
     assert resp.headers["location"] == f"/imports/{rows[2].id}"
 
 
+def test_review_page_shows_rip_verification(client, with_editions, settings):
+    from picker.models import Import
+    seed()
+    settings.auto_import, settings.transcode_check = True, False
+    rows = [{"n": 1, "file": "01 Airbag.flac", "status": "ok", "confidence": 20, "total": 20, "v1": "0", "v2": "0"},
+            {"n": 2, "file": "02 Paranoid Android.flac", "status": "mismatch", "confidence": 0, "total": 20, "v1": "0", "v2": "0"}]
+    crows = [{"n": 1, "file": "01 Airbag.flac", "status": "ok", "confidence": 40, "total": 40, "crc": "0"},
+             {"n": 2, "file": "02 Paranoid Android.flac", "status": "mismatch", "confidence": 0, "total": 40, "crc": "0"}]
+    check = {"applicable": True, "mismatched": ["02 Paranoid Android.flac"], "summary": "CTDB 1/2 tracks match, AccurateRip 1/2 tracks accurate",
+             "discs": [{"applicable": True, "toc_source": "log", "files": 2,
+                        "accuraterip": {"status": "mismatch", "offset": 0, "confidence": 0, "matched": 1, "known": 2, "tracks": rows},
+                        "ctdb": {"status": "mismatch", "offset": 0, "confidence": 0, "entries": 1, "tracks": crows}}]}
+    with session() as s:
+        imp = Import(rg_mbid="rg-1", release_mbid="jp-cd", username="alice", state="review", step="review", source_dir="/dl/picker/1",
+                     download_id=1, integrity=[{"name": "02 Paranoid Android.flac", "ok": True, "path": "/dl/picker/1/02 Paranoid Android.flac"}],
+                     rip_check=check)
+        s.add(imp)
+        s.commit()
+        s.refresh(imp)
+    html = client.get(f"/imports/{imp.id}").text
+    assert "1 track differs from the verified rip" in html and "02 Paranoid Android.flac" in html
+    assert "Re-download the 1 differing track" in html and "TOC from the rip log" in html
+    assert "Waiting for you because a track differs from the verified rip" in html
+    assert "1 track differ" in client.get("/review").text and "rip differs" in client.get("/history").text
+
+    with session() as s:
+        row = s.get(Import, imp.id)
+        row.rip_check = {**check, "mismatched": [], "summary": "CTDB verified (confidence 40), AccurateRip 2/2 (confidence 20)",
+                         "discs": [{**check["discs"][0], "accuraterip": {**check["discs"][0]["accuraterip"], "status": "verified", "tracks": [rows[0], {**rows[1], "status": "ok", "confidence": 20}]},
+                                    "ctdb": {**check["discs"][0]["ctdb"], "status": "verified", "confidence": 40, "tracks": [crows[0], {**crows[1], "status": "ok", "confidence": 40}]}}]}
+        s.add(row)
+        s.commit()
+    html = client.get(f"/imports/{imp.id}").text
+    assert "verified rip" in html and "Re-download" not in html and "<table class=\"grid small rip-check\">" not in html
+    assert "verified rip" in client.get("/history").text
+
+
 def test_review_page_explains_a_beets_skip(client, with_editions):
     from picker.models import Import
     seed()

@@ -331,6 +331,54 @@ async def test_auto_import_waits_for_review_when_a_check_does_not_pass(env, monk
     assert any(reason in e for e in events), events
 
 
+def _rip(monkeypatch, result):
+    from picker import ripverify
+
+    async def fake(root, files, settings):
+        return result
+
+    monkeypatch.setattr(ripverify, "verify_folder", fake)
+
+
+VERIFIED = {"applicable": True, "mismatched": [], "summary": "CTDB verified (confidence 40), AccurateRip 3/3 (confidence 20)",
+            "discs": [{"applicable": True, "toc_source": "lengths", "files": 3,
+                       "accuraterip": {"status": "verified", "offset": 0, "confidence": 20, "matched": 3, "known": 3, "tracks": []},
+                       "ctdb": {"status": "verified", "offset": 0, "confidence": 40, "entries": 1, "tracks": []}}]}
+
+
+async def test_rip_verification_runs_before_review_and_a_differing_track_holds(env, monkeypatch):
+    settings, *_ = env
+    settings.auto_import = True
+    _spectrum(monkeypatch, "full")
+    _rip(monkeypatch, VERIFIED)
+    imp = await run(importing.start_import(landed_download(settings, job_id=17)))
+    assert imp.state == "imported" and imp.rip_check["summary"].startswith("CTDB verified")
+    placed = Path(imp.album_dir)
+
+    mismatch = {**VERIFIED, "mismatched": ["02 Track.flac"], "summary": "CTDB 2/3 tracks match"}
+    _rip(monkeypatch, mismatch)
+    imp = await run(importing.start_import(landed_download(settings, job_id=18, nested=False)))  # flat, as slskd batches land
+    assert imp.state == "review" and importing.review_reason(imp, settings) == "a track differs from the verified rip"
+    with session() as s:
+        from picker.models import JobEvent
+        events = [e.message for e in s.exec(select(JobEvent)).all()]
+    assert any("Rip verification: CTDB 2/3" in e for e in events), events
+
+    # Re-download just that track: the file goes, a refetch is requested, and the import waits for it.
+    from picker import downloading
+    asked = []
+    monkeypatch.setattr(downloading, "refetch_files", lambda dl_id, names, imp_id: asked.append(list(names)))
+    imp = importing.refetch(imp, names=["02 Track.flac"])
+    assert imp.state == "refetching" and asked == [[r"m\OKC\02 Track.flac"]]
+    assert not (Path(imp.source_dir) / "02 Track.flac").exists() and (Path(imp.source_dir) / "01 Track.flac").exists()
+
+    settings.rip_verify = False
+    import shutil
+    shutil.rmtree(placed)  # the picker never overwrites a placed folder
+    imp = await run(importing.start_import(landed_download(settings, job_id=19)))
+    assert imp.state == "imported" and imp.rip_check is None
+
+
 def _tag_files(dl: Download, settings, **tags) -> None:
     from picker.downloading import landed_dir
 

@@ -146,6 +146,7 @@ class Import(SQLModel, table=True):
     spectrograms: list = json_field(list)  # file names under spectrogram_dir/<id>/
     transcode: dict | None = Field(default=None, sa_column=Column(JSON))  # audio.transcode_check
     tag_check: dict | None = Field(default=None, sa_column=Column(JSON))  # tagcheck.TagCheck: the uploader's tags vs the chosen edition
+    rip_check: dict | None = Field(default=None, sa_column=Column(JSON))  # ripverify.verify_folder: CUETools DB / AccurateRip
     beets_output: str | None = None
     beets_match: dict | None = Field(default=None, sa_column=Column(JSON))  # why beets skipped (beets_explain)
     tags: dict | None = Field(default=None, sa_column=Column(JSON))  # audio.tag_snapshot after beets

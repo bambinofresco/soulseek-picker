@@ -17,7 +17,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlmodel import select
 
-from . import albums, health, importing, lidarr_feed, owned, preferences, prefetching, probe, recommend
+from . import albums, health, importing, lidarr_feed, owned, preferences, prefetching, probe, recommend, ripverify
 from .beets import config_warnings as beets_config_warnings
 from .clients import reset_services, services
 from .clients.http import ServiceError
@@ -109,6 +109,7 @@ templates.env.filters.update(
 )
 templates.env.globals["app_warnings"] = lambda: health.path_warnings(get_settings()) + beets_config_warnings(get_settings())
 templates.env.globals["waiting_count"] = lambda: len(importing.waiting_imports())
+templates.env.globals["rip_verdict"] = ripverify.verdict
 
 
 def render(request: Request, name: str, **context) -> HTMLResponse:
@@ -545,6 +546,8 @@ async def import_action(request: Request, import_id: int, action: str):
             importing.retry(imp)
         elif action == "refetch":
             importing.refetch(imp)
+        elif action == "refetch-mismatch":
+            importing.refetch(imp, names=list((imp.rip_check or {}).get("mismatched") or []))
         elif action == "edition":
             importing.change_edition(imp, str(form.get("release_mbid") or ""))
         elif action == "reject":
@@ -595,7 +598,7 @@ FORM_SECTIONS = {
                "search_quick_seconds", "search_quick_responses", "search_max_seconds"],
     "Preferences": [
         "flac_only", "prefer_original", "auto_import", "stuck_days", "stall_timeout_minutes", "queue_timeout_hours",
-        "download_scans", "max_sidecar_mb", "transcode_check", "cutoff_db",
+        "download_scans", "max_sidecar_mb", "transcode_check", "cutoff_db", "rip_verify", "accuraterip",
     ],
     "Edition preferences": ["avoid_remasters", "preferred_countries", "preferred_sources", "preferred_depth",
                             "avoid_flags", "prefer_flags"],

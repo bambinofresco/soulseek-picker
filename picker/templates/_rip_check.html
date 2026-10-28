@@ -1,0 +1,35 @@
+{#- Rip verification (imp.rip_check, from picker/ripverify.py). -#}
+{% set rc = imp.rip_check %}
+{% set v = rip_verdict(rc) %}
+{% if v == "verified" %}
+  <p class="small"><span class="badge ok">verified rip</span> <span class="muted">{{ rc.summary }}</span></p>
+{% elif v == "mismatch" %}
+  <p class="banner warn"><strong>{{ rc.mismatched|length }} track{{ "s" if rc.mismatched|length != 1 }} differ{{ "s" if rc.mismatched|length == 1 }} from the verified rip</strong>
+    ({{ rc.mismatched|join(", ") }}) while the others match. The file decodes, but its audio is not what other rips of this disc contain. {{ rc.summary }}.</p>
+{% elif v == "no_match" %}
+  <p class="small"><span class="badge warn">no match</span> <span class="muted">{{ rc.summary }}. The disc is known but this rip's checksums differ: a different pressing with the same layout, or a rip with errors throughout.</span></p>
+{% elif v == "not_in_db" %}
+  <p class="small"><span class="badge">not in database</span> <span class="muted">{{ rc.summary }}. Common for obscure pressings; nothing is known either way.</span></p>
+{% else %}
+  <p class="small muted">Rip verification: {{ rc.summary }}.</p>
+{% endif %}
+{% for d in rc.discs if d.applicable %}
+  {% set ar, ct = d.accuraterip, d.ctdb %}
+  {% if (ar.tracks or ct.tracks) and (v in ("mismatch", "no_match") or ar.tracks|selectattr("status", "ne", "ok")|list or ct.tracks|selectattr("status", "ne", "ok")|list) %}
+  <table class="grid small rip-check">
+    <tr><th>Track</th><th>CUETools DB</th><th>AccurateRip</th></tr>
+    {% for i in range([ar.tracks|length, ct.tracks|length]|max) %}
+    {% set a = ar.tracks[i] if i < ar.tracks|length else none %}
+    {% set c = ct.tracks[i] if i < ct.tracks|length else none %}
+    <tr>
+      <td class="mono">{{ (a or c).file }}</td>
+      <td class="{{ 'ok-text' if c and c.status == 'ok' else ('warn-text' if c and c.status == 'mismatch' else 'muted') }}">
+        {% if c %}{{ {"ok": "match", "mismatch": "differs", "not_in_db": "unknown"}[c.status] }}{% if c.confidence %} ({{ c.confidence }}){% endif %}{% else %}–{% endif %}</td>
+      <td class="{{ 'ok-text' if a and a.status == 'ok' else ('warn-text' if a and a.status == 'mismatch' else 'muted') }}">
+        {% if a %}{{ {"ok": "accurate", "mismatch": "differs", "not_in_db": "unknown"}[a.status] }}{% if a.confidence %} ({{ a.confidence }}/{{ a.total }}){% endif %}{% else %}–{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="small muted">TOC from {{ "the rip log" if d.toc_source == "log" else "the track lengths" }}{% if ar.offset or ct.offset %} · pressing offset {{ "%+d"|format(ar.offset or ct.offset) }} samples{% endif %}.</p>
+  {% endif %}
+{% endfor %}

@@ -94,6 +94,19 @@
   </div>
 </section>
 
+{% if imp.rip_check %}
+<section>
+  <h2>Rip verification</h2>
+  {% include "_rip_check.html" %}
+  {% if imp.rip_check.mismatched and imp.state in ("review", "failed", "blocked") and not imp.album_dir and imp.download_id %}
+  <form method="post" action="/imports/{{ imp.id }}/refetch-mismatch" class="inline-form">
+    <button>Re-download the {{ imp.rip_check.mismatched|length }} differing track{{ "s" if imp.rip_check.mismatched|length != 1 }}</button>
+    <span class="small muted">Deletes {{ "it" if imp.rip_check.mismatched|length == 1 else "them" }} and downloads {{ "it" if imp.rip_check.mismatched|length == 1 else "them" }} again from {{ imp.username }}; the checks run again when {{ "it" if imp.rip_check.mismatched|length == 1 else "they" }} arrive.</span>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
 {% if imp.transcode %}
 <section>
   <h2>Spectrum check</h2>

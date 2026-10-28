@@ -25,6 +25,8 @@
         {% if tc %}<span class="badge {{ 'warn' if tc.kind in ('lossy', 'upsampled') else ('ok' if tc.kind == 'full' else '') }}" title="{{ tc.detail }}">{% if tc.kind == "full" %}full-range{% elif tc.kind == "lossy" %}transcode?{% elif tc.kind == "upsampled" %}upsampled?{% else %}spectrum {{ tc.kind }}{% endif %}</span>{% endif %}
         {% set tk = imp.tag_check %}
         {% if tk and tk.kind in ("different", "mixed") %}<span class="badge warn" title="{{ tk.detail }}">{{ "mixed rips" if tk.kind == "mixed" else "tags differ" }}</span>{% elif tk and tk.kind in ("same", "sibling", "agree") %}<span class="badge ok" title="{{ tk.detail }}">tags fit</span>{% endif %}
+        {% set rv = rip_verdict(imp.rip_check) %}
+        {% if rv == "verified" %}<span class="badge ok" title="{{ imp.rip_check.summary }}">verified rip</span>{% elif rv == "mismatch" %}<span class="badge warn" title="{{ imp.rip_check.summary }}">{{ imp.rip_check.mismatched|length }} track{{ "s" if imp.rip_check.mismatched|length != 1 }} differ</span>{% elif rv == "no_match" %}<span class="badge warn" title="{{ imp.rip_check.summary }}">rip unverified</span>{% endif %}
         {% if imp.beets_match and imp.beets_match.similarity is defined %}<span class="badge warn" title="beets rated the match {{ (imp.beets_match.similarity * 100)|round(1) }}%">beets {{ (imp.beets_match.similarity * 100)|round|int }}%</span>{% endif %}
       </td>
       <td class="small">{% if imp.state == "review" %}{{ r.hold or "every check passed" }}{% elif imp.state == "skipped" %}beets skipped it{% elif imp.error %}{{ imp.error }}{% else %}{{ imp.state }}{% endif %}</td>
