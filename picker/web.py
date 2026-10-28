@@ -107,6 +107,7 @@ templates.env.filters.update(
     mb=_mb, khz=_khz, speed=_speed, duration=_duration, local=_local, edition=_edition_label, signed=_signed, ago=_ago,
 )
 templates.env.globals["app_warnings"] = lambda: health.path_warnings(get_settings()) + beets_config_warnings(get_settings())
+templates.env.globals["waiting_count"] = lambda: len(importing.waiting_imports())
 
 
 def render(request: Request, name: str, **context) -> HTMLResponse:
@@ -518,6 +519,7 @@ async def import_spectrogram(import_id: int, name: str):
 async def import_action(request: Request, import_id: int, action: str):
     imp = _import(import_id)
     form = await request.form()
+    back = "/review" if form.get("back") == "review" else f"/imports/{import_id}"
     try:
         if action == "import":
             importing.approve(imp)
@@ -536,8 +538,24 @@ async def import_action(request: Request, import_id: int, action: str):
         else:
             raise HTTPException(404)
     except importing.Blocked as exc:
-        return RedirectResponse(f"/imports/{import_id}?{urlencode({'error': str(exc)})}", status_code=303)
-    return RedirectResponse(f"/imports/{import_id}", status_code=303)
+        return RedirectResponse(f"{back}?{urlencode({'error': str(exc)})}", status_code=303)
+    return RedirectResponse(back, status_code=303)
+
+
+@router.get("/review", response_class=HTMLResponse)
+async def review_page(request: Request, error: str | None = None):
+    """Every import waiting on the user, with its checks and the buttons inline."""
+    imports = importing.waiting_imports()
+    settings = get_settings()
+    with session() as s:
+        album_rows = {a.rg_mbid: a for a in s.exec(select(Album).where(Album.rg_mbid.in_({i.rg_mbid for i in imports})))}
+    editions: dict[str, dict[str, Edition]] = {}
+    for rg in {i.rg_mbid for i in imports if i.release_mbid}:
+        eds, _ = await _editions(rg)
+        editions[rg] = {e.id: e for e in eds}
+    rows = [{"imp": imp, "album": album_rows.get(imp.rg_mbid), "hold": importing.review_reason(imp, settings),
+             "edition": editions.get(imp.rg_mbid, {}).get(imp.release_mbid)} for imp in imports]
+    return render(request, "review.html", rows=rows, error=error, auto_import=settings.auto_import)
 
 
 @router.get("/history", response_class=HTMLResponse)

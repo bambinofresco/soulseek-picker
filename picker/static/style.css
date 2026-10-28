@@ -103,6 +103,8 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .banner.error { background: var(--error-bg); color: var(--error); }
 .banner.tag-check p, .banner.owned p { margin: 0 0 6px; }
 .beets-match td { vertical-align: top; }
+.review-list .checks .badge { margin: 0 4px 4px 0; }
+.review-list .actions form { display: inline-block; margin: 0 4px 4px 0; }
 .banner.tag-check form { margin-top: 6px; }
 
 .badge {

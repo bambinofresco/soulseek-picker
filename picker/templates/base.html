@@ -14,6 +14,7 @@
     <nav>
       <a href="/">Home</a>
       <a href="/downloads">Downloads</a>
+      <a href="/review">Review{% set n = waiting_count() %}{% if n %} <span class="badge warn">{{ n }}</span>{% endif %}</a>
       <a href="/history">History</a>
       <a href="/settings">Settings</a>
     </nav>

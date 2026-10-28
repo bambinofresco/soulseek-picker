@@ -523,6 +523,16 @@ async def _scan_plex(imp: Import, settings: Settings) -> None:
         _note(imp, "Neither autoscan nor Plex is configured; the library scan is left to Plex's own watcher")
 
 
+WAITING_STATES = ("review", "skipped", "blocked")
+
+
+def waiting_imports() -> list[Import]:
+    """Every import that needs the user: review, beets skipped, blocked, or a failed check."""
+    with session() as s:
+        rows = s.exec(select(Import).where(Import.state.in_([*WAITING_STATES, "failed"])).order_by(Import.id.desc())).all()
+    return [i for i in rows if i.state != "failed" or i.step == "verify"]
+
+
 def imports_for(download_ids: list[int]) -> dict[int, Import]:
     with session() as s:
         rows = s.exec(select(Import).where(Import.download_id.in_(download_ids)).order_by(Import.id)).all()

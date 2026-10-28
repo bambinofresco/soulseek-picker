@@ -131,6 +131,8 @@ Before any bandwidth is spent, the picker checks whether the album is in the lib
 
 Anything else waits on the Review page, and the album's event log says why ("waiting for review (the spectrum check suggests a transcode)"). Turn `auto_import` off to review every download.
 
+**Review list.** `/review` (the Review link in the top bar, with a count) lists every import waiting on you: those under review, the ones beets skipped, blocked ones, and failed checks. Each row shows the chosen edition, the checks as badges (integrity, spectrum, tag check, beets' rating) and why it waits, with Import, Force apply, Retry and Reject inline, so a batch can be cleared without opening each album. Home shows the same count.
+
 **Tag check.** Before anything is placed or tagged, the picker reads the tags the uploader left in the files and compares them with the edition you chose when you downloaded. beets is told to ignore those tags (see the overlays under beets), so this is the only place a folder tagged as another edition gets noticed:
 - **Same release**: the files already carry the chosen edition's MusicBrainz ID. Nothing to do.
 - **Sister pressing**: they carry another release of the same album with the same year and kind (country, label or catalog number differ). A note on the Review page; the import goes ahead.

@@ -5,6 +5,13 @@
   {% include "_search_form.html" %}
 </section>
 
+{% set waiting = waiting_count() %}
+{% if waiting %}
+<section>
+  <p class="banner warn"><a href="/review">{{ waiting }} import{{ "s" if waiting != 1 }} waiting for you</a></p>
+</section>
+{% endif %}
+
 <section>
   <div class="toolbar">
     <h2>Stuck in Lidarr</h2>

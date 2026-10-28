@@ -295,6 +295,43 @@ def test_album_page_and_results_say_when_you_already_have_it(client, with_editio
     assert html.count("in library") == 1 and html.index("OK Computer") < html.index("in library") < html.index("Kid A")
 
 
+def test_review_list_shows_everything_waiting_with_inline_buttons(client, with_editions, settings):
+    from picker.models import Import
+    seed()
+    settings.auto_import, settings.transcode_check = True, False
+    with session() as s:
+        rows = [
+            Import(rg_mbid="rg-1", release_mbid="jp-cd", username="alice", state="review", step="review", source_dir="/dl/1",
+                   integrity=[{"name": "01.flac", "ok": True, "detail": ""}], transcode={"album": {"kind": "full", "detail": "fine"}, "files": []},
+                   tag_check={"kind": "different", "detail": "the files are tagged as another edition", "tagged_mbid": "uk-cd", "in_group": True, "tags": {}}),
+            Import(rg_mbid="rg-1", release_mbid="jp-cd", username="bob", state="skipped", step="beets", album_dir="/music/x",
+                   beets_match={"similarity": 0.827, "threshold": 0.9, "penalties": [], "tracks": [], "missing": [], "unmatched": [], "album": "a", "release": "jp-cd"}),
+            Import(rg_mbid="rg-1", release_mbid="jp-cd", username="carol", state="blocked", step="place", error="target exists", source_dir="/dl/3"),
+            Import(rg_mbid="rg-1", release_mbid="jp-cd", username="dave", state="failed", step="verify", error="verification failed: 1 damaged", source_dir="/dl/4",
+                   integrity=[{"name": "01.flac", "ok": False, "detail": "FLAC decoder aborted", "path": "/dl/4/01.flac"}]),
+            Import(rg_mbid="rg-1", release_mbid="jp-cd", username="erin", state="failed", step="beets", error="beets exited 2", album_dir="/music/y"),
+            Import(rg_mbid="rg-1", release_mbid="jp-cd", username="frank", state="imported", step="done", album_dir="/music/z"),
+        ]
+        s.add_all(rows)
+        s.commit()
+    html = client.get("/review").text
+    assert "4 imports" in html
+    assert "alice" in html and "bob" in html and "carol" in html and "dave" in html
+    assert "erin" not in html and "frank" not in html  # a failure past verify is not a check to review; imported is done
+    assert "tags differ" in html and "full-range" in html and "1 files ok" in html and "beets 83%" in html and "1 damaged" in html
+    assert "the files are tagged as a different edition" in html and "target exists" in html
+    assert html.count('name="back" value="review"') >= 6
+    assert "Import</button>" in html and "Force apply" in html and "Retry" in html and "Reject" in html
+    assert 'href="/review">Review <span class="badge warn">4</span>' in html
+    assert "4 imports waiting for you" in client.get("/").text
+
+    # Actions started from the list come back to it.
+    resp = client.post(f"/imports/{rows[2].id}/retry", data={"back": "review"}, follow_redirects=False)
+    assert resp.status_code == 303 and resp.headers["location"] == "/review"
+    resp = client.post(f"/imports/{rows[2].id}/retry", data={}, follow_redirects=False)
+    assert resp.headers["location"] == f"/imports/{rows[2].id}"
+
+
 def test_review_page_explains_a_beets_skip(client, with_editions):
     from picker.models import Import
     seed()
