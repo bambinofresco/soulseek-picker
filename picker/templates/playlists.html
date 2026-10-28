@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Playlists · Soulseek picker{% endblock %}
+{% block content %}
+<h1>Playlists</h1>
+<section class="card">
+  <h2>Upload a playlist</h2>
+  <p class="small muted">A CSV exported from Spotify (Exportify or the like). Needed columns: track name, artist, album.
+    ISRC and duration make the match to MusicBrainz exact; without them rows are matched by name.</p>
+  <form method="post" action="/playlists" enctype="multipart/form-data" class="upload">
+    <input type="file" name="file" accept=".csv,text/csv" required>
+    <input name="name" placeholder="Name (defaults to the file name)" autocomplete="off">
+    <button type="submit" class="primary">Upload</button>
+  </form>
+  {% if error %}<p class="banner error">{{ error }}</p>{% endif %}
+</section>
+
+<section>
+  {% if rows %}
+  <table class="grid stack">
+    <thead><tr><th>Playlist</th><th>Rows</th><th>State</th><th>Uploaded</th><th></th></tr></thead>
+    <tbody>
+    {% for p, n in rows %}
+    <tr>
+      <td data-label="Playlist"><a href="/playlists/{{ p.id }}">{{ p.name }}</a></td>
+      <td data-label="Rows">{{ n }}</td>
+      <td data-label="State"><span class="state state-{{ p.state }}">{{ p.state }}</span>{% if p.state == "resolving" %} <span class="muted small">{{ p.resolved }} of {{ n }}</span>{% endif %}</td>
+      <td data-label="Uploaded" class="nowrap muted">{{ p.created_at|local }}</td>
+      <td><form method="post" action="/playlists/{{ p.id }}/delete" onsubmit="return confirm('Remove this playlist from the picker? Files, Plex and the queue are not touched.')"><button class="small danger">Remove</button></form></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No playlists yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

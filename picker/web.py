@@ -17,7 +17,8 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlmodel import select
 
-from . import albums, health, importing, library, lidarr_feed, owned, preferences, prefetching, probe, recommend, ripverify
+from . import albums, health, importing, library, lidarr_feed, owned, playlists, preferences, prefetching, probe, recommend, ripverify
+from .queries import normalize as _normalize
 from .beets import config_warnings as beets_config_warnings, explain_skip as beets_explain_skip
 from .clients import reset_services, services
 from .clients.http import ServiceError
@@ -110,6 +111,8 @@ templates.env.filters.update(
 templates.env.globals["app_warnings"] = lambda: health.path_warnings(get_settings()) + beets_config_warnings(get_settings())
 templates.env.globals["waiting_count"] = lambda: len(importing.waiting_imports())
 templates.env.globals["rip_verdict"] = ripverify.verdict
+templates.env.globals["normalize"] = _normalize
+templates.env.globals["playlists_first_artist"] = playlists.first_artist
 
 
 def render(request: Request, name: str, **context) -> HTMLResponse:
@@ -591,6 +594,123 @@ async def review_page(request: Request, error: str | None = None):
     rows = [{"imp": imp, "album": album_rows.get(imp.rg_mbid), "hold": importing.review_reason(imp, settings),
              "edition": editions.get(imp.rg_mbid, {}).get(imp.release_mbid)} for imp in imports]
     return render(request, "review.html", rows=rows, error=error, auto_import=settings.auto_import)
+
+
+# Playlists
+
+@router.get("/playlists", response_class=HTMLResponse)
+async def playlists_page(request: Request, error: str = ""):
+    return render(request, "playlists.html", rows=playlists.all_playlists(), error=error)
+
+
+@router.post("/playlists")
+async def playlist_upload(request: Request):
+    form = await request.form()
+    upload = form.get("file")
+    if upload is None or not getattr(upload, "filename", None):
+        return render(request, "playlists.html", rows=playlists.all_playlists(), error="Choose a CSV file to upload")
+    raw = await upload.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1")
+    name = (form.get("name") or "").strip() or Path(upload.filename).stem
+    try:
+        playlist = playlists.create_playlist(name, text)
+    except ValueError as exc:
+        return render(request, "playlists.html", rows=playlists.all_playlists(), error=f"Could not read the CSV: {exc}")
+    return RedirectResponse(f"/playlists/{playlist.id}", status_code=303)
+
+
+async def _playlist_review(request: Request, playlist_id: int, template: str) -> HTMLResponse:
+    review = await playlists.review(playlist_id, get_settings())
+    if review is None:
+        raise HTTPException(404, "no such playlist")
+    return render(request, template, r=review)
+
+
+def _playlist_answer(request: Request, playlist_id: int):
+    """HTMX gets the albums partial back; a plain form gets sent back to the page."""
+    if request.headers.get("HX-Request"):
+        return _playlist_review(request, playlist_id, "_playlist_albums.html")
+
+    async def redirect():
+        return RedirectResponse(f"/playlists/{playlist_id}", status_code=303)
+    return redirect()
+
+
+@router.get("/playlists/{playlist_id}", response_class=HTMLResponse)
+async def playlist_page(request: Request, playlist_id: int):
+    return await _playlist_review(request, playlist_id, "playlist.html")
+
+
+@router.get("/playlists/{playlist_id}/albums", response_class=HTMLResponse)
+async def playlist_albums(request: Request, playlist_id: int):
+    return await _playlist_review(request, playlist_id, "_playlist_albums.html")
+
+
+@router.post("/playlists/{playlist_id}/options", response_class=HTMLResponse)
+async def playlist_options(request: Request, playlist_id: int):
+    form = await request.form()
+    playlists.set_options(playlist_id, full_albums=form.get("full_albums") == "1",
+                          prefer_studio=form.get("prefer_studio_album") == "1")
+    return await _playlist_answer(request, playlist_id)
+
+
+@router.post("/playlists/{playlist_id}/albums/{rg_mbid}/mode", response_class=HTMLResponse)
+async def playlist_album_mode(request: Request, playlist_id: int, rg_mbid: str):
+    form = await request.form()
+    mode = form.get("mode") or "auto"
+    try:
+        playlists.set_mode(playlist_id, rg_mbid, None if mode == "auto" else mode)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return await _playlist_answer(request, playlist_id)
+
+
+@router.post("/playlists/{playlist_id}/tracks/{track_id}/album", response_class=HTMLResponse)
+async def playlist_track_album(request: Request, playlist_id: int, track_id: int):
+    form = await request.form()
+    playlists.set_track_album(track_id, form.get("rg_mbid") or "")
+    return await _playlist_answer(request, playlist_id)
+
+
+@router.post("/playlists/{playlist_id}/tracks/{track_id}/{what}", response_class=HTMLResponse)
+async def playlist_track_action(request: Request, playlist_id: int, track_id: int, what: str):
+    form = await request.form()
+    if what in ("drop", "owned"):
+        playlists.toggle_track(track_id, what)
+    elif what == "find":
+        results, error = [], None
+        try:
+            results = await services().mb.search_release_groups(form.get("artist") or "", form.get("album") or "")
+        except ServiceError as exc:
+            error = exc.message
+        for rg in results:
+            rg["artist_name"] = albums.artist_credit_name(rg)
+        return render(request, "_playlist_find.html", results=results, error=error, playlist_id=playlist_id, track_id=track_id)
+    elif what == "manual":
+        rg_mbid = (form.get("rg_mbid") or "").strip().lower()
+        try:
+            await albums.ensure_album(rg_mbid)
+        except ServiceError as exc:
+            raise HTTPException(502, exc.message) from exc
+        playlists.set_track_manual(track_id, rg_mbid)
+    else:
+        raise HTTPException(404, "unknown action")
+    return await _playlist_answer(request, playlist_id)
+
+
+@router.post("/playlists/{playlist_id}/resolve")
+async def playlist_resolve(playlist_id: int):
+    playlists.queue_resolve(playlist_id)
+    return RedirectResponse(f"/playlists/{playlist_id}", status_code=303)
+
+
+@router.post("/playlists/{playlist_id}/delete")
+async def playlist_delete(playlist_id: int):
+    playlists.delete_playlist(playlist_id)
+    return RedirectResponse("/playlists", status_code=303)
 
 
 @router.get("/library", response_class=HTMLResponse)

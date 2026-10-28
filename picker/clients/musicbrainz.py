@@ -88,6 +88,29 @@ class MusicBrainzClient:
         data = await self._get("/release-group/", {"query": " AND ".join(parts), "limit": limit})
         return data.get("release-groups", [])
 
+    async def recordings_by_isrcs(self, isrcs: list[str]) -> list[dict]:
+        """Recordings carrying any of these ISRCs (at most 25 per call), each with its `isrcs`
+        and every release it is on, including the release group's type and the release's date,
+        country and track count. One request instead of one per ISRC."""
+        if not isrcs:
+            return []
+        query = "isrc:(" + " OR ".join(_lucene_escape(i.strip().upper()) for i in isrcs) + ")"
+        data = await self._get("/recording/", {"query": query, "limit": 100})
+        return data.get("recordings", []) or []
+
+    async def search_recordings(self, artist: str, title: str, duration_ms: int | None = None,
+                                limit: int = 10) -> list[dict]:
+        """Recordings by title and artist, within 3 s of the duration when known; scored by MusicBrainz."""
+        if not title.strip():
+            return []
+        parts = [f'recording:"{_lucene_escape(title.strip())}"']
+        if artist.strip():
+            parts.append(f'artist:"{_lucene_escape(artist.strip())}"')
+        if duration_ms:
+            parts.append(f"dur:[{max(0, duration_ms - 3000)} TO {duration_ms + 3000}]")
+        data = await self._get("/recording/", {"query": " AND ".join(parts), "limit": limit})
+        return data.get("recordings", []) or []
+
     async def release_group(self, rg_mbid: str) -> dict:
         return await self._get(f"/release-group/{rg_mbid}", {"inc": "artist-credits"})
 

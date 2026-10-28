@@ -156,6 +156,64 @@ class Import(SQLModel, table=True):
     finished_at: datetime | None = None
 
 
+class Playlist(SQLModel, table=True):
+    """An uploaded playlist (picker/playlists.py): the CSV's rows, resolved to albums, and the run made from it."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    csv_hash: str | None = None
+    state: str = "resolving"  # resolving | review | running | paused | done
+    full_albums: bool = True  # the top toggle: full albums (True) or only the playlist's tracks
+    prefer_studio_album: bool = True  # compilation tracks resolve to the earliest studio album holding them
+    resolved: int = 0  # rows resolved so far, for the progress line
+    error: str | None = None
+    plex_rating_key: str | None = None
+    m3u_path: str | None = None
+    last_sync: datetime | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class PlaylistTrack(SQLModel, table=True):
+    """One CSV row, and what MusicBrainz and the library say about it."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    playlist_id: int = Field(index=True)
+    position: int
+    uri: str | None = None
+    isrc: str | None = None
+    title: str
+    artist: str
+    album_artist: str | None = None
+    album: str
+    duration_ms: int | None = None
+    release_date: str | None = None
+    recording_mbid: str | None = None
+    recording_title: str | None = None
+    recording_length: int | None = None  # ms
+    rg_mbid: str | None = Field(default=None, index=True)  # the album chosen for this track
+    single_rg_mbid: str | None = None  # the single or EP holding the recording, when one exists
+    use_single: bool | None = None  # None: follow the playlist's top toggle
+    options: list = json_field(list)  # every release group holding the recording: playlists.AlbumOption dicts
+    resolution: str | None = None  # isrc | text-strong | text-weak | manual | none; None: not tried yet
+    owned_path: str | None = None  # a library file that is this recording
+    owned_how: str | None = None  # recording | name
+    owned_unticked: bool = False  # the user said the by-name match is wrong
+    dropped: bool = False
+    queue_item_id: int | None = None
+    plex_item_id: str | None = None
+    note: str | None = None
+
+
+class PlaylistAlbum(SQLModel, table=True):
+    """The user's choice for one album of a playlist. Rows exist only for albums the page has shown."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    playlist_id: int = Field(index=True)
+    rg_mbid: str = Field(index=True)
+    mode: str | None = None  # full | tracks | upgrade | skip; None follows the top toggle (or "skip" when owned)
+    queue_item_id: int | None = None
+
+
 class LibraryFile(SQLModel, table=True):
     """One audio file under the music directory, as the library index last saw it (picker/library.py)."""
 

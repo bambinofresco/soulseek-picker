@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import downloading, importing, library, lidarr_feed, prefetching, searching  # noqa: F401  (register job handlers)
+from . import downloading, importing, library, lidarr_feed, playlists, prefetching, searching  # noqa: F401  (register job handlers)
 from .lidarr_feed import stuck_scheduler
 from .beets import ensure_config as ensure_beets_config
 from .clients import close_services

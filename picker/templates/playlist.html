@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ r.playlist.name }} · Playlists · Soulseek picker{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <h1>{{ r.playlist.name }}</h1>
+  <span class="state state-{{ r.playlist.state }}">{{ r.playlist.state }}</span>
+  <a class="small" href="/playlists">All playlists</a>
+</div>
+{% if r.playlist.error %}<p class="banner error">{{ r.playlist.error }}</p>{% endif %}
+
+<section class="card playlist-options">
+  <form method="post" action="/playlists/{{ r.playlist.id }}/options" hx-post="/playlists/{{ r.playlist.id }}/options" hx-target="#albums" hx-swap="outerHTML" hx-trigger="change">
+    <label><input type="checkbox" name="full_albums" value="1" {% if r.playlist.full_albums %}checked{% endif %}> <strong>Full albums</strong> <span class="muted small">off: only the playlist's tracks, and singles instead of albums where a single exists</span></label>
+    <label><input type="checkbox" name="prefer_studio_album" value="1" {% if r.playlist.prefer_studio_album %}checked{% endif %}> <strong>Prefer the studio album</strong> <span class="muted small">a track the CSV places on a compilation resolves to the earliest studio album holding that recording</span></label>
+    <noscript><button type="submit" class="small">Apply</button></noscript>
+  </form>
+</section>
+
+{% include "_playlist_albums.html" %}
+{% endblock %}

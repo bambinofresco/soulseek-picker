@@ -1,0 +1,12 @@
+{% if error %}<p class="banner error">{{ error }}</p>{% endif %}
+{% if results %}
+<ul class="plain small find-results">
+  {% for rg in results[:8] %}
+  <li>{{ rg.artist_name }} — {{ rg.title }}{% if rg.disambiguation %} <span class="muted">({{ rg.disambiguation }})</span>{% endif %}
+    <span class="muted">{{ rg["first-release-date"][:4] if rg["first-release-date"] else "" }} {{ rg["primary-type"] or "" }}{% for t in rg.get("secondary-types", []) %} · {{ t }}{% endfor %}</span>
+    <a class="button small" href="#" hx-post="/playlists/{{ playlist_id }}/tracks/{{ track_id }}/manual" hx-vals='{"rg_mbid": "{{ rg.id }}"}' hx-target="#albums" hx-swap="outerHTML">Use</a></li>
+  {% endfor %}
+</ul>
+{% elif not error %}
+<p class="muted small">Nothing found.</p>
+{% endif %}

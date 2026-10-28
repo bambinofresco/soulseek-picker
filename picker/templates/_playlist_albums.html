@@ -1,0 +1,113 @@
+{% set p = r.playlist %}
+{% set total = r.tracks|length %}
+<div id="albums" {% if p.state == "resolving" %}hx-get="/playlists/{{ p.id }}/albums" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+{% if p.state == "resolving" %}
+<p class="banner"><span class="badge">resolving</span> {{ p.resolved }} of {{ total }} rows matched to MusicBrainz so far…</p>
+{% endif %}
+
+<p class="counts">
+  <strong>{{ r.groups|length }} album{{ "s" if r.groups|length != 1 }}</strong> from {{ total }} rows:
+  {{ r.counts.full }} full, {{ r.counts.tracks }} tracks-only, {{ r.counts.upgrade }} upgrade{{ "s" if r.counts.upgrade != 1 }}, {{ r.counts.skip }} skipped ({{ r.counts.owned }} owned).
+  {% if r.total_mb %}About <strong>{{ (r.total_mb / 1000)|round(1) }} GB</strong> to download.{% endif %}
+  {% if r.attention %}<a href="#attention" class="warn-text">{{ r.attention|length }} row{{ "s" if r.attention|length != 1 }} need{{ "s" if r.attention|length == 1 }} attention.</a>{% endif %}
+</p>
+
+{% if r.groups %}
+<ul class="plain albums">
+{% for g in r.groups %}
+{% set a = g.album %}
+<li class="card album-group mode-{{ g.mode }}">
+  <details>
+    <summary>
+      <span class="album-head">
+        <span class="album-name">{% if a %}<a href="/album/{{ g.rg_mbid }}">{{ a.artist }} — {{ a.title }}</a>{% if a.first_release_date %} <span class="muted">({{ a.first_release_date[:4] }}{% if a.primary_type and a.primary_type != "Album" %}, {{ a.primary_type }}{% endif %})</span>{% endif %}{% else %}<a href="/album/{{ g.rg_mbid }}" class="mono">{{ g.rg_mbid[:8] }}</a>{% endif %}</span>
+        <span class="album-facts muted small">
+          {{ g.tracks|length }} of {{ a.min_track_count if a and a.min_track_count else "?" }} tracks on the playlist{% if g.owned_tracks %}, {{ g.owned_tracks }} owned{% endif %}
+          {% if g.owned %} · <span class="badge ok" title="{{ g.owned.path or '' }}">owned{% if g.owned.have and g.owned.want %} {{ g.owned.have }}/{{ g.owned.want }}{% endif %}</span>{% endif %}
+          {% if g.estimate_mb %} · ~{{ g.estimate_mb }} MB{% endif %}
+        </span>
+      </span>
+      <span class="album-mode" onclick="event.preventDefault()">
+        {% for m, label in [("full", "Full album"), ("tracks", "Only these " ~ g.tracks|length), ("upgrade", "Upgrade"), ("skip", "Skip")] %}
+        {% if m != "upgrade" or g.owned %}
+        <label class="small"><input type="radio" name="mode-{{ g.rg_mbid }}" value="{{ m }}" {% if g.mode == m %}checked{% endif %}
+          hx-post="/playlists/{{ p.id }}/albums/{{ g.rg_mbid }}/mode" hx-vals='{"mode": "{{ m }}"}' hx-target="#albums" hx-swap="outerHTML"> {{ label }}{% if m == "skip" and g.owned %} (owned){% endif %}</label>
+        {% endif %}
+        {% endfor %}
+        {% if g.choice.mode %}<a class="small muted" href="#" hx-post="/playlists/{{ p.id }}/albums/{{ g.rg_mbid }}/mode" hx-vals='{"mode": "auto"}' hx-target="#albums" hx-swap="outerHTML" title="Follow the top toggle again">auto</a>{% endif %}
+      </span>
+    </summary>
+    <table class="grid stack tracks">
+      <thead><tr><th>#</th><th>Track</th><th>Length</th><th>Match</th><th>Owned</th><th>From</th><th></th></tr></thead>
+      <tbody>
+      {% for t in g.tracks %}
+      <tr>
+        <td class="muted" data-label="#">{{ t.position }}</td>
+        <td data-label="Track">{{ t.title }}{% if t.recording_title and t.recording_title != t.title %} <span class="muted small">(MB: {{ t.recording_title }})</span>{% endif %}<br><span class="muted small">{{ t.artist }}</span></td>
+        <td class="nowrap" data-label="Length">{{ (t.duration_ms // 1000)|duration if t.duration_ms else "" }}</td>
+        <td data-label="Match">{% if t.resolution == "isrc" %}<span class="badge ok" title="ISRC {{ t.isrc }}">ISRC</span>{% elif t.resolution == "text-strong" %}<span class="badge" title="matched by title, artist and length">by name</span>{% elif t.resolution == "text-weak" %}<span class="badge warn" title="an uncertain match by name">weak</span>{% elif t.resolution == "manual" %}<span class="badge">by hand</span>{% else %}<span class="badge warn">none</span>{% endif %}</td>
+        <td data-label="Owned">{% if t.owned_path %}<span class="badge ok" title="{{ t.owned_path }}">✓{% if t.owned_how == "name" %} by name{% endif %}</span>
+            {% if t.owned_how == "name" %}<a class="small muted" href="#" hx-post="/playlists/{{ p.id }}/tracks/{{ t.id }}/owned" hx-target="#albums" hx-swap="outerHTML" title="This file is not the track I mean">wrong?</a>{% endif %}
+          {% elif t.owned_unticked %}<a class="small muted" href="#" hx-post="/playlists/{{ p.id }}/tracks/{{ t.id }}/owned" hx-target="#albums" hx-swap="outerHTML">check by name again</a>{% endif %}</td>
+        <td data-label="From">
+          {% if t.options|length > 1 or t.single_rg_mbid %}
+          <select class="small" hx-post="/playlists/{{ p.id }}/tracks/{{ t.id }}/album" hx-target="#albums" hx-swap="outerHTML" name="rg_mbid">
+            {% for o in t.options %}{% if o.kind != "single" or o.rg_mbid == t.single_rg_mbid or o.rg_mbid == t.rg_mbid %}
+            <option value="{{ o.rg_mbid }}" {% if o.rg_mbid == g.rg_mbid %}selected{% endif %}>{{ o.title }}{% if o.date %} ({{ o.date[:4] }}{% else %} ({% endif %}, {{ o.kind }})</option>
+            {% endif %}{% endfor %}
+          </select>
+          {% if t.album and normalize(t.album) != normalize(a.title if a else "") %}<span class="muted small" title="what the CSV says">CSV: {{ t.album }}</span>{% endif %}
+          {% else %}<span class="muted small">{{ t.album }}</span>{% endif %}
+        </td>
+        <td><a class="small muted" href="#" hx-post="/playlists/{{ p.id }}/tracks/{{ t.id }}/drop" hx-target="#albums" hx-swap="outerHTML" title="Leave this row out">drop</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</li>
+{% endfor %}
+</ul>
+{% elif p.state != "resolving" %}
+<p class="muted">No rows resolved to an album yet.</p>
+{% endif %}
+
+{% if r.attention %}
+<section id="attention">
+  <h2>Needs attention</h2>
+  <p class="small muted">Rows MusicBrainz could not place, or placed uncertainly. Search for the album by hand, or drop the row.</p>
+  <table class="grid stack">
+    <thead><tr><th>#</th><th>Row</th><th>Why</th><th>Find the album</th><th></th></tr></thead>
+    <tbody>
+    {% for t in r.attention %}
+    <tr id="attention-{{ t.id }}">
+      <td class="muted" data-label="#">{{ t.position }}</td>
+      <td data-label="Row">{{ t.title }}<br><span class="muted small">{{ t.artist }} · {{ t.album }}{% if t.isrc %} · {{ t.isrc }}{% endif %}</span></td>
+      <td data-label="Why">{% if t.resolution is none %}not tried yet{% elif t.resolution == "none" %}no MusicBrainz recording matched{% elif t.resolution == "text-weak" %}uncertain match by name{% else %}no album chosen{% endif %}</td>
+      <td data-label="Find">
+        <form class="inline" hx-post="/playlists/{{ p.id }}/tracks/{{ t.id }}/find" hx-target="#find-{{ t.id }}" hx-swap="innerHTML">
+          <input name="artist" value="{{ t.album_artist or playlists_first_artist(t.artist) }}" placeholder="Artist" autocomplete="off">
+          <input name="album" value="{{ t.album }}" placeholder="Album" autocomplete="off">
+          <button class="small">Find</button>
+        </form>
+        <div id="find-{{ t.id }}"></div>
+      </td>
+      <td><a class="small muted" href="#" hx-post="/playlists/{{ p.id }}/tracks/{{ t.id }}/drop" hx-target="#albums" hx-swap="outerHTML">drop</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% set dropped = r.tracks|selectattr("dropped")|list %}
+{% if dropped %}
+<details class="small muted"><summary>{{ dropped|length }} dropped row{{ "s" if dropped|length != 1 }}</summary>
+  <ul class="plain">{% for t in dropped %}<li>{{ t.position }}. {{ t.title }} · {{ t.artist }} <a href="#" hx-post="/playlists/{{ p.id }}/tracks/{{ t.id }}/drop" hx-target="#albums" hx-swap="outerHTML">restore</a></li>{% endfor %}</ul>
+</details>
+{% endif %}
+
+{% if p.state == "review" and r.attention and r.attention|selectattr("resolution", "none")|list %}
+<form method="post" action="/playlists/{{ p.id }}/resolve"><button class="small">Resolve the untried rows</button></form>
+{% endif %}
+</div>

@@ -218,6 +218,27 @@ table.files tr:not(.kind-audio) { color: var(--muted); }
 progress { width: 140px; vertical-align: middle; }
 
 .progress-line { display: flex; align-items: center; gap: 8px; }
+
+/* Playlists */
+form.upload { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.playlist-options form { display: flex; gap: 20px; flex-wrap: wrap; }
+.playlist-options label { display: flex; gap: 6px; align-items: baseline; }
+p.counts { margin: 0 0 12px; }
+ul.albums li.album-group { margin-bottom: 8px; padding: 8px 12px; }
+ul.albums li.mode-skip { opacity: 0.7; }
+.album-group summary { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; cursor: pointer; list-style: none; }
+.album-group summary::-webkit-details-marker { display: none; }
+.album-group summary::before { content: "▸"; color: var(--muted); }
+.album-group details[open] summary::before { content: "▾"; }
+.album-head { display: flex; flex-direction: column; gap: 2px; flex: 1 1 320px; }
+.album-name { font-weight: 600; }
+.album-mode { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.album-mode label { white-space: nowrap; }
+.album-group table.tracks { margin-top: 8px; }
+.album-group table.tracks select { font: inherit; font-size: 0.85em; max-width: 280px; }
+form.inline { display: flex; gap: 6px; flex-wrap: wrap; }
+form.inline input { max-width: 180px; }
+ul.find-results li { padding: 4px 0; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .spinner {
   width: 14px; height: 14px;
   border: 2px solid var(--border);

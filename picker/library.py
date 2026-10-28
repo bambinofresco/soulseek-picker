@@ -337,20 +337,28 @@ def owned_recordings(recording_mbids: list[str]) -> dict[str, LibraryFile]:
     return found
 
 
-def owned_by_name(artist: str, title: str, duration: float | None) -> LibraryFile | None:
+def name_index() -> dict[str, list[LibraryFile]]:
+    """Folded title -> files, built once for a batch of owned-by-name lookups."""
+    index: dict[str, list[LibraryFile]] = {}
+    with session() as s:
+        rows = s.exec(select(LibraryFile).where(LibraryFile.title.is_not(None)).order_by(LibraryFile.path)).all()
+    for row in rows:
+        index.setdefault(_fold(row.title), []).append(row)
+    return index
+
+
+def owned_by_name(artist: str, title: str, duration: float | None,
+                  index: dict[str, list[LibraryFile]] | None = None) -> LibraryFile | None:
     """A file with the same artist and title (folded) and, when both are known, a duration within 3 s.
 
     Looser than an ID match: it can pick the album version when the single edit was meant, so
-    callers show it as "owned (by name)".
+    callers show it as "owned (by name)". Pass a `name_index()` when checking many tracks.
     """
     want_title, want_artist = _fold(title), _fold(artist)
     if not want_title:
         return None
-    with session() as s:
-        rows = s.exec(select(LibraryFile).where(LibraryFile.title.is_not(None)).order_by(LibraryFile.path)).all()
+    rows = (index if index is not None else name_index()).get(want_title, [])
     for row in rows:
-        if _fold(row.title) != want_title:
-            continue
         if want_artist and _fold(row.artist) != want_artist and _fold(row.albumartist) != want_artist:
             continue
         if duration and row.duration and abs(row.duration - duration) > NAME_DURATION_SLACK:
