@@ -6,6 +6,7 @@ Find-album results (local sources only, cached). Sources, in order of trust:
     picker   an import of this release group that finished, whose folder still exists
     Lidarr   the album has track files; its monitored release says which edition
     beets    the beets library holds an album with this release-group ID
+    index    files on disk carry this release-group ID (picker/library.py), whoever tagged them
 
 Nothing here changes anything: a download of an owned album still works, and stops at
 placing because the folder exists (the picker never overwrites).
@@ -13,13 +14,14 @@ placing because the folder exists (the picker never overwrites).
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import timedelta
 from pathlib import Path
 
 from sqlmodel import select
 
-from . import beets
+from . import beets, library
 from .clients import services
 from .clients.http import ServiceError
 from .config import Settings
@@ -99,22 +101,39 @@ async def check_album(rg_mbid: str, settings: Settings) -> Owned | None:
         entry = None
     if entry and (not entry.get("path") or Path(entry["path"]).is_dir()):
         return Owned("beets", entry.get("release"), entry.get("path"))
-    return None
+    return _from_index(rg_mbid)
+
+
+def _from_index(rg_mbid: str) -> Owned | None:
+    """Files on disk tagged with this release group, whoever tagged them (Lidarr's own grabs,
+    albums beets imported elsewhere, folders the index found that no other source knows)."""
+    files = library.album_files(rg_mbid)
+    if not files:
+        return None
+    releases = Counter(f.release_mbid for f in files if f.release_mbid)
+    release = releases.most_common(1)[0][0] if releases else None
+    folders = Counter(f.folder for f in files)
+    return Owned("index", release, folders.most_common(1)[0][0], have=len(files))
 
 
 async def owned_release_groups(rg_mbids: list[str], settings: Settings) -> dict[str, Owned]:
-    """The local sources only (history, beets): cheap enough for a results list."""
+    """The local sources only (history, beets, the index): cheap enough for a results list."""
     found: dict[str, Owned] = {}
     for rg in rg_mbids:
         owned = _from_history(rg)
         if owned:
             found[rg] = owned
     try:
-        library = await _beets_albums(settings)
+        beets_library = await _beets_albums(settings)
     except OSError:
-        library = {}
+        beets_library = {}
     for rg in rg_mbids:
-        entry = library.get(rg)
+        entry = beets_library.get(rg)
         if rg not in found and entry and (not entry.get("path") or Path(entry["path"]).is_dir()):
             found[rg] = Owned("beets", entry.get("release"), entry.get("path"))
+    for rg in rg_mbids:
+        if rg not in found:
+            owned = _from_index(rg)
+            if owned:
+                found[rg] = owned
     return found

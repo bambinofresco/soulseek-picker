@@ -143,7 +143,9 @@ Below 720 px wide, the candidates table becomes a list of cards: match and editi
 
 ## Albums you already have
 
-Before any bandwidth is spent, the picker checks whether the album is in the library. The album page shows a banner naming the edition and where it is, from the first source that knows: the picker's own import history (if the folder still exists), Lidarr (track files present; the monitored release is the edition), or the beets library. Find-album results carry an **in library** badge from the local sources (history and beets; Lidarr is asked on the album page only). You can still search and download; the import then stops at placing because the folder exists, since the picker never overwrites anything in the library. Replacing an album you have is the upgrades phase of the spec.
+Before any bandwidth is spent, the picker checks whether the album is in the library. The album page shows a banner naming the edition and where it is, from the first source that knows: the picker's own import history (if the folder still exists), Lidarr (track files present; the monitored release is the edition), the beets library, or the library index (files on disk tagged with the release group, whoever tagged them). Find-album results carry an **in library** badge from the local sources (history, beets and the index; Lidarr is asked on the album page only). You can still search and download; the import then stops at placing because the folder exists, since the picker never overwrites anything in the library. Replacing an album you have is the upgrades phase of the spec.
+
+**The library index.** `/library` (the Library link in the top bar) is what the picker knows about the files on disk: every audio file under the music directory with its tags and MusicBrainz IDs, read with mutagen and never written. It is refreshed for the folder an import or retag just touched, nightly at 03:00 for the whole library (unchanged files are not re-read), and on **Index now**. With Lidarr connected, the nightly pass also compares the two: files on disk Lidarr does not list (albums its metadata profile excludes, folders it has not rescanned) and files Lidarr lists that are not on disk (moved, deleted, or a path mapping that differs between the containers). Nothing is changed on either side. The page also lists folders whose files carry no MusicBrainz release ID, which beets never tagged.
 
 ## Importing automatically
 
@@ -292,6 +294,7 @@ To release: push to `main` for `latest`, or tag `vX.Y.Z` for a versioned image.
 | `picker/naming.py` | Album folder names, Lidarr-compatible |
 | `picker/audio.py`, `beets.py`, `importing.py` | Integrity, spectrograms, tag snapshot; the beets subprocess; the import pipeline |
 | `picker/lidarr_feed.py` | Stuck-wanted queue and webhook retags |
+| `picker/library.py`, `owned.py` | The library index (files on disk, their tags, the Lidarr comparison); is this album already here? |
 | `picker/probe.py` | The API probe |
 | `picker/web.py`, `templates/` | Pages and HTMX partials |
 | `unraid/picker.xml`, `.github/workflows/image.yml` | Unraid template; test-then-publish workflow |

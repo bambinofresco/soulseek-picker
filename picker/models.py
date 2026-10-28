@@ -156,6 +156,30 @@ class Import(SQLModel, table=True):
     finished_at: datetime | None = None
 
 
+class LibraryFile(SQLModel, table=True):
+    """One audio file under the music directory, as the library index last saw it (picker/library.py)."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    path: str = Field(index=True, unique=True)
+    folder: str = Field(index=True)  # the file's directory: the album folder, or a disc folder under it
+    size: int = 0
+    mtime: float = 0.0
+    duration: float | None = None  # seconds
+    bit_depth: int | None = None
+    sample_rate: int | None = None
+    artist: str | None = None
+    albumartist: str | None = None
+    album: str | None = None
+    title: str | None = None
+    tracknumber: int | None = None
+    discnumber: int | None = None
+    release_mbid: str | None = Field(default=None, index=True)
+    rg_mbid: str | None = Field(default=None, index=True)
+    recording_mbid: str | None = Field(default=None, index=True)
+    lidarr_file_id: int | None = None  # Lidarr's track file ID when Lidarr lists this path
+    indexed_at: datetime = Field(default_factory=utcnow)
+
+
 class CacheEntry(SQLModel, table=True):
     key: str = Field(primary_key=True)
     data: Any = Field(default=None, sa_column=Column(JSON))

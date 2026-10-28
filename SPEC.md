@@ -41,7 +41,7 @@ Guarantees the whole design keeps:
   `/mediadata/media/music`.
 - **Jobs:** an in-process runner over a `jobs` table. Every queued job is its own asyncio task;
   jobs left running by a restart are queued again, so every handler is safe to re-run. Job kinds:
-  search, prefetch (logs), download, import, stuck-refresh, retag.
+  search, prefetch (logs), download, import, stuck-refresh, retag, index (the library index).
 - **Settings:** `picker.yaml`, each field overridable by an environment variable of the same
   name in upper case. The Settings page saves only values that differ from the defaults, so a
   later change of default reaches existing installs.
@@ -56,13 +56,20 @@ Guarantees the whole design keeps:
 | `download` | One download of a candidate as one edition: slskd destination, per-file states, bytes, chunking window, queue position, timing. |
 | `import` | One trip through the import pipeline (also the History row): step, state, every check's result (integrity, spectrograms, spectrum, tag check, rip check), beets output and match breakdown, final folder, notes. |
 | `job`, `jobevent` | The job queue and the per-album event log. |
-| `cacheentry` | Cached MusicBrainz, beets-library and rip-database responses with a fetch time. |
+| `libraryfile` | One audio file under the music directory as the library index last saw it: path, size, mtime, duration, bit depth and rate, identifying tags (artist, album artist, album, title, track and disc number), MusicBrainz release, release-group and recording IDs, Lidarr's track-file ID when Lidarr lists the path. |
+| `cacheentry` | Cached MusicBrainz, beets-library and rip-database responses with a fetch time; the last index pass's summary. |
 
 ## 4. Finding an album
 
 The home page has an artist field and an album field, or takes a pasted MusicBrainz URL.
 Results are MusicBrainz release groups; each carries an **in library** badge when the picker's
-import history or the beets library already holds it. **Pick** opens the album page and starts a
+import history, the beets library or the library index already holds it. The album page asks
+Lidarr as well. The **library index** (`picker/library.py`) is one `libraryfile` row per audio
+file under the music directory, read with mutagen and never written: refreshed for the folder
+an import or retag touched, nightly at 03:00 local for the whole library (files with the same
+size and mtime are not re-read; rows for files that are gone are removed), and on demand. A
+full pass with Lidarr configured also compares the index with Lidarr's track files and keeps
+the differences for the Library page. **Pick** opens the album page and starts a
 Soulseek search at once unless one is running or finished in the last 10 minutes.
 
 The home page also lists **Stuck in Lidarr**: monitored albums Lidarr has wanted for longer than
@@ -281,6 +288,7 @@ destinations never start with `lidarr/`, which is all Lidarr's slskd plugin clai
 | `/review` | Every import waiting on the user, with the checks as badges and the buttons inline. |
 | `/imports/<id>` | The Review page for one import: edition, holds, tag check, rip verification, spectrum check, spectrograms, integrity, beets breakdown and output, tags written. |
 | `/history` | Every import, with badges and the tags written. |
+| `/library` | The library index: counts, the last pass, the Lidarr comparison (files Lidarr does not list, files Lidarr lists that are not on disk), folders without MusicBrainz IDs, unreadable files; **Index now**. |
 | `/settings` | Settings by section with per-service Test buttons, the folder-name dry run, and the probe. |
 
 Below 720 px the candidates table becomes cards with a Sort & filter sheet, the other tables

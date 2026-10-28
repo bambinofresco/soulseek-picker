@@ -15,7 +15,7 @@
   <div class="banner warn owned">
     <p><strong>You already have this album.</strong>
       {% if have_edition %}The {{ have_edition|edition }} edition{% elif have.release_mbid %}Edition <span class="mono">{{ have.release_mbid[:8] }}</span>{% else %}An edition{% endif %}
-      {% if have.source == "picker" %}was imported by the picker{% elif have.source == "lidarr" %}is in Lidarr{% if have.have is not none and have.want %} with {{ have.have }} of {{ have.want }} track files{% endif %}{% else %}is in the beets library{% endif %}{% if have.path %}, at <span class="mono">{{ have.path }}</span>{% endif %}.</p>
+      {% if have.source == "picker" %}was imported by the picker{% elif have.source == "lidarr" %}is in Lidarr{% if have.have is not none and have.want %} with {{ have.have }} of {{ have.want }} track files{% endif %}{% elif have.source == "index" %}is on disk{% if have.have %} ({{ have.have }} tagged files){% endif %}{% else %}is in the beets library{% endif %}{% if have.path %}, at <span class="mono">{{ have.path }}</span>{% endif %}.</p>
     <p class="small muted">Downloading another copy stops at placing because that folder exists; the picker never overwrites or deletes in the library.
       {% if have.import_id %}<a href="/imports/{{ have.import_id }}">Its import</a>.{% endif %}</p>
   </div>

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Library · Soulseek picker{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <h1>Library</h1>
+  <form method="post" action="/library/reindex"><button class="small">Index now</button></form>
+  {% if indexing %}<span class="badge">indexing…</span>{% endif %}
+</div>
+<p class="muted">Every audio file under <span class="mono">{{ music_dir }}</span>, read from disk. This is what the
+picker trusts when it asks whether a track is already in the library; Lidarr and beets are compared against it.</p>
+
+<section class="card">
+  <table class="grid stack">
+    <tbody>
+    <tr><th>Files</th><td data-label="Files">{{ s.files }}</td></tr>
+    <tr><th>Folders</th><td data-label="Folders">{{ s.folders }}</td></tr>
+    <tr><th>Files with a MusicBrainz release ID</th><td data-label="With IDs">{{ s.with_ids }}{% if s.files %} <span class="muted small">({{ (100 * s.with_ids / s.files)|round|int }}%)</span>{% endif %}</td></tr>
+    <tr><th>Last full pass</th><td data-label="Last pass">
+      {% if s.last.finished %}{{ s.last.finished[:16]|replace("T", " ") }} UTC
+        {% if s.last.scan %}<span class="muted small">· {{ s.last.scan.added }} new, {{ s.last.scan.updated }} changed, {{ s.last.scan.removed }} gone{% if s.last.scan.errors %}, {{ s.last.scan.errors|length }} unreadable{% endif %}</span>{% endif %}
+      {% else %}<span class="muted">not yet</span>{% endif %}</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Against Lidarr</h2>
+  {% set d = s.last.lidarr %}
+  {% if not lidarr_configured %}
+    <p class="muted">Connect Lidarr in Settings to compare its track files with the files on disk.</p>
+  {% elif not d %}
+    <p class="muted">Compared on the next full pass.</p>
+  {% elif d.error %}
+    <p class="banner warn">Lidarr did not answer: {{ d.error }}</p>
+  {% else %}
+    <p>Lidarr lists {{ d.lidarr_files }} track files; {{ d.matched }} of the {{ s.files }} files on disk are among them.</p>
+    {% if d.unknown_to_lidarr %}
+    <details>
+      <summary>{{ d.unknown_to_lidarr|length }} file{{ "s" if d.unknown_to_lidarr|length != 1 }} on disk that Lidarr does not list</summary>
+      <p class="small muted">Albums its metadata profile excludes (singles, live albums, compilations), folders it has not rescanned, or files it never imported. The picker counts them as owned regardless.</p>
+      <ul class="plain mono small">{% for p in d.unknown_to_lidarr[:300] %}<li>{{ p }}</li>{% endfor %}{% if d.unknown_to_lidarr|length > 300 %}<li class="muted">… and {{ d.unknown_to_lidarr|length - 300 }} more</li>{% endif %}</ul>
+    </details>
+    {% endif %}
+    {% if d.missing_on_disk %}
+    <details open>
+      <summary class="warn">{{ d.missing_on_disk|length }} file{{ "s" if d.missing_on_disk|length != 1 }} Lidarr lists that are not on disk</summary>
+      <p class="small muted">Moved or deleted since Lidarr last scanned, or a path mapping that differs between the two containers. A rescan in Lidarr clears the first; the second needs the same host folder mounted at the same path in both.</p>
+      <ul class="plain mono small">{% for p in d.missing_on_disk[:300] %}<li>{{ p }}</li>{% endfor %}{% if d.missing_on_disk|length > 300 %}<li class="muted">… and {{ d.missing_on_disk|length - 300 }} more</li>{% endif %}</ul>
+    </details>
+    {% endif %}
+    {% if not d.unknown_to_lidarr and not d.missing_on_disk %}<p class="banner ok">Lidarr and the disk agree.</p>{% endif %}
+  {% endif %}
+</section>
+
+<section>
+  <h2>Folders without MusicBrainz IDs</h2>
+  {% if untagged %}
+  <p class="small muted">beets never tagged these, so they are matched by artist and title only. {{ untagged|length }} folder{{ "s" if untagged|length != 1 }}{% if untagged|length == 200 %} (first 200){% endif %}.</p>
+  <details>
+    <summary>Show</summary>
+    <ul class="plain mono small">{% for folder, n in untagged %}<li>{{ folder }} <span class="muted">({{ n }})</span></li>{% endfor %}</ul>
+  </details>
+  {% else %}
+  <p class="muted">{% if s.files %}Every file carries a release ID.{% else %}Nothing indexed yet.{% endif %}</p>
+  {% endif %}
+</section>
+
+{% if s.last.scan and s.last.scan.errors %}
+<section>
+  <h2>Unreadable files</h2>
+  <ul class="plain mono small">{% for e in s.last.scan.errors[:100] %}<li>{{ e }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+{% endblock %}

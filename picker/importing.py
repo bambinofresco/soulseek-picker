@@ -26,7 +26,7 @@ from pathlib import Path
 
 from sqlmodel import select
 
-from . import albums, audio, beets, ripverify, tagcheck
+from . import albums, audio, beets, library, ripverify, tagcheck
 from .clients import services
 from .clients.http import ServiceError
 from .config import Settings, get_settings
@@ -339,6 +339,8 @@ async def _pipeline(imp: Import) -> None:
         await _scan_plex(imp, settings)
         _save(imp, step="done", state="imported", finished_at=utcnow())
         log_event(imp.job_id, imp.rg_mbid, f"Imported into {imp.album_dir}")
+        if imp.album_dir:
+            library.queue_index(imp.album_dir)  # the index sees the new folder before the nightly pass
 
 
 async def _verify(imp: Import, settings: Settings) -> None:

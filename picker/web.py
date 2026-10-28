@@ -17,7 +17,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlmodel import select
 
-from . import albums, health, importing, lidarr_feed, owned, preferences, prefetching, probe, recommend, ripverify
+from . import albums, health, importing, library, lidarr_feed, owned, preferences, prefetching, probe, recommend, ripverify
 from .beets import config_warnings as beets_config_warnings, explain_skip as beets_explain_skip
 from .clients import reset_services, services
 from .clients.http import ServiceError
@@ -591,6 +591,20 @@ async def review_page(request: Request, error: str | None = None):
     rows = [{"imp": imp, "album": album_rows.get(imp.rg_mbid), "hold": importing.review_reason(imp, settings),
              "edition": editions.get(imp.rg_mbid, {}).get(imp.release_mbid)} for imp in imports]
     return render(request, "review.html", rows=rows, error=error, auto_import=settings.auto_import)
+
+
+@router.get("/library", response_class=HTMLResponse)
+async def library_page(request: Request):
+    with session() as s:
+        indexing = s.exec(select(Job).where(Job.kind == "index", Job.status.in_(["queued", "running"]))).first() is not None
+    return render(request, "library.html", s=library.summary(), untagged=library.untagged_folders(), indexing=indexing,
+                  music_dir=get_settings().music_dir, lidarr_configured=bool(get_settings().lidarr_api_key))
+
+
+@router.post("/library/reindex")
+async def library_reindex():
+    library.queue_index()
+    return RedirectResponse("/library", status_code=303)
 
 
 @router.get("/history", response_class=HTMLResponse)

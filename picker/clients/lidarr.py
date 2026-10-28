@@ -40,8 +40,11 @@ class LidarrClient:
 
     # Artists
 
+    async def artists(self) -> list[dict]:
+        return await self._get("/artist")
+
     async def artist_by_mbid(self, artist_mbid: str) -> dict | None:
-        for artist in await self._get("/artist"):
+        for artist in await self.artists():
             if artist.get("foreignArtistId") == artist_mbid:
                 return artist
         return None
@@ -78,6 +81,9 @@ class LidarrClient:
 
     async def track_files(self, album_id: int) -> list[dict]:
         return await self._get("/trackfile", albumId=album_id)
+
+    async def track_files_for_artist(self, artist_id: int) -> list[dict]:
+        return await self._get("/trackfile", artistId=artist_id)
 
     async def wanted_missing(self, page: int, page_size: int = 100) -> dict:
         return await self._get(
