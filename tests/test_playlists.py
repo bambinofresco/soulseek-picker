@@ -232,7 +232,7 @@ async def test_review_groups_modes_and_toggles(settings, mb):
     assert [g.mode for g in r.groups] == ["full", "full", "full"]
     assert r.groups[0].estimate_mb == 12 * 30 and r.total_mb == (12 + 13 + 10) * 30
     assert [t.position for t in r.attention] == [4]
-    assert r.counts == {"full": 3, "tracks": 0, "upgrade": 0, "skip": 0, "owned": 0}
+    assert r.counts == {"full": 3, "tracks": 0, "tracks_plus": 0, "upgrade": 0, "skip": 0, "owned": 0}
 
     # Tracks-only: Smells Like Teen Spirit moves to its single (in full), Come as You Are stays tracks-only.
     playlists.set_options(playlist.id, full_albums=False)
@@ -285,11 +285,22 @@ async def test_owned_album_defaults_to_skip(settings, mb):
         LUCKY["releases"][1]["release-group"]["id"] = RAM
     r = await playlists.review(playlist.id, settings)
     group = next(g for g in r.groups if g.rg_mbid == ram_real)
-    assert group.owned and group.owned.source == "index" and group.mode == "skip"
-    assert r.counts["owned"] == 1 and r.counts["skip"] == 1
-    playlists.set_mode(playlist.id, ram_real, "upgrade")
+    # Three files of a thirteen-track album, and the playlist wants a fourth: a partial copy, replaced whole by default.
+    assert group.owned and group.owned.source == "index" and group.partial_copy and group.mode == "upgrade"
+    assert r.counts["owned"] == 1 and r.counts["upgrade"] == 1 and r.counts["skip"] == 0
+    playlists.set_mode(playlist.id, ram_real, "skip")
     r = await playlists.review(playlist.id, settings)
-    assert next(g for g in r.groups if g.rg_mbid == ram_real).mode == "upgrade"
+    assert next(g for g in r.groups if g.rg_mbid == ram_real).mode == "skip"
+    # A complete copy is simply owned.
+    with session() as s:
+        album = s.get(Album, ram_real)
+        album.min_track_count = 3
+        s.add(album)
+        s.commit()
+    playlists.set_mode(playlist.id, ram_real, None)
+    r = await playlists.review(playlist.id, settings)
+    group = next(g for g in r.groups if g.rg_mbid == ram_real)
+    assert not group.partial_copy and group.mode == "skip"
 
 
 async def test_manual_resolution_and_delete(settings, mb):

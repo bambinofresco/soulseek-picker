@@ -127,7 +127,7 @@ def start_import(dl: Download) -> Import:
 
     imp = Import(
         download_id=dl.id, rg_mbid=dl.rg_mbid, release_mbid=dl.release_mbid, username=dl.username,
-        source_dir=str(landed_dir(dl, get_settings())), upgrade_of=dl.upgrade_of,
+        source_dir=str(landed_dir(dl, get_settings())), upgrade_of=dl.upgrade_of, partial=dl.partial,
     )
     with session() as s:
         s.add(imp)
@@ -405,7 +405,10 @@ async def _verify(imp: Import, settings: Settings) -> None:
         _save(imp, transcode=transcode)
         if transcode["album"]["kind"] in ("lossy", "upsampled"):
             log_event(imp.job_id, imp.rg_mbid, f"Possible transcode: {transcode['album']['detail']}")
-    if settings.rip_verify:
+    if settings.rip_verify and imp.partial:
+        # Both databases work from the disc's table of contents, which a subset of tracks cannot give.
+        _save(imp, rip_check={"applicable": False, "discs": [], "mismatched": [], "summary": "not checked (partial album)"})
+    elif settings.rip_verify:
         # A signal, not a gate, except for a track that fails while its siblings verify.
         rip = await ripverify.verify_folder(root, audio.audio_files(root), settings)
         _save(imp, rip_check=rip)
@@ -545,7 +548,7 @@ async def _beets(imp: Import, settings: Settings) -> bool:
     if imp.upgrade_of and imp.replaced_dir and not settings.beets_pretend:
         await beets.forget_path(settings, Path(imp.upgrade_of))  # the replaced copy leaves the beets library
     result = await beets.import_album(settings, album_dir, imp.release_mbid, force=imp.force,
-                                      pretend=settings.beets_pretend)
+                                      pretend=settings.beets_pretend, partial=bool(imp.partial))
     _save(imp, beets_output=result.output)
     if result.imported:
         _save(imp, step="lidarr", tags=audio.tag_snapshot(album_dir))
@@ -581,6 +584,11 @@ async def _sync_lidarr(imp: Import, settings: Settings) -> None:
             want = r.get("foreignReleaseId") == imp.release_mbid
             changed |= r.get("monitored") != want
             r["monitored"] = want
+        if imp.partial and album.get("monitored"):
+            # A monitored album with tracks missing is exactly what Lidarr fills from an indexer,
+            # in whatever edition it finds. The release stays set so Lidarr counts "7 of 12" right.
+            album["monitored"], changed = False, True
+            _note(imp, "Left unmonitored in Lidarr: a partial album it would otherwise try to complete")
         if changed:
             await lidarr.update_album(album)
     artist_dir = str(Path(imp.album_dir).parent) if imp.album_dir else None

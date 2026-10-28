@@ -7,7 +7,7 @@
 
 <p class="counts">
   <strong>{{ r.groups|length }} album{{ "s" if r.groups|length != 1 }}</strong> from {{ total }} rows:
-  {{ r.counts.full }} full, {{ r.counts.tracks }} tracks-only, {{ r.counts.upgrade }} upgrade{{ "s" if r.counts.upgrade != 1 }}, {{ r.counts.skip }} skipped ({{ r.counts.owned }} owned).
+  {{ r.counts.full }} full, {{ r.counts.tracks }} tracks-only,{% if r.counts.tracks_plus %} {{ r.counts.tracks_plus }} tracks added to a partial copy,{% endif %} {{ r.counts.upgrade }} upgrade{{ "s" if r.counts.upgrade != 1 }}, {{ r.counts.skip }} skipped ({{ r.counts.owned }} owned).
   {% if r.total_mb %}About <strong>{{ (r.total_mb / 1000)|round(1) }} GB</strong> to download.{% endif %}
   {% if r.attention %}<a href="#attention" class="warn-text">{{ r.attention|length }} row{{ "s" if r.attention|length != 1 }} need{{ "s" if r.attention|length == 1 }} attention.</a>{% endif %}
 </p>
@@ -28,7 +28,9 @@
         </span>
       </span>
       <span class="album-mode" onclick="event.preventDefault()">
-        {% for m, label in [("full", "Full album"), ("tracks", "Only these " ~ g.tracks|length), ("upgrade", "Upgrade"), ("skip", "Skip")] %}
+        {% if g.partial_copy %}{% set choices = [("upgrade", "Full album (replaces your " ~ g.owned.have ~ " tracks)"), ("tracks_plus", "These " ~ g.wanted_tracks ~ " + the " ~ g.owned.have ~ " you have"), ("skip", "Skip")] %}
+        {% else %}{% set choices = [("full", "Full album"), ("tracks", "Only these " ~ g.tracks|length), ("upgrade", "Upgrade"), ("skip", "Skip")] %}{% endif %}
+        {% for m, label in choices %}
         {% if m != "upgrade" or g.owned %}
         <label class="small"><input type="radio" name="mode-{{ g.rg_mbid }}" value="{{ m }}" {% if g.mode == m %}checked{% endif %}
           hx-post="/playlists/{{ p.id }}/albums/{{ g.rg_mbid }}/mode" hx-vals='{"mode": "{{ m }}"}' hx-target="#albums" hx-swap="outerHTML"> {{ label }}{% if m == "skip" and g.owned %} (owned){% endif %}</label>

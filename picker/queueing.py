@@ -28,7 +28,7 @@ from datetime import datetime, timedelta
 
 from sqlmodel import col, select
 
-from . import albums, plexsync, prefetching, recommend
+from . import albums, library, plexsync, prefetching, recommend, tracks
 from .clients.http import ServiceError
 from .config import Settings, get_settings
 from .db import session
@@ -37,7 +37,7 @@ from .editions import Edition
 from .jobs import handler, log_event, worker
 from .matching import TIER_RANK
 from .models import Album, Download, Import, Job, Playlist, PlaylistAlbum, PlaylistTrack, QueueItem, Search, utcnow
-from .preferences import score_edition
+from .preferences import best_edition, score_edition
 from .searching import latest_search, next_best_candidate, ordered_candidates, search_more, start_search
 
 log = logging.getLogger(__name__)
@@ -130,8 +130,15 @@ async def start_run(playlist_id: int, settings: Settings | None = None) -> int:
         if group.mode == "skip":
             continue
         wanted = [t.recording_mbid for t in group.tracks if not t.owned_path and t.recording_mbid]
-        item = add(group.rg_mbid, group.mode, source="playlist", playlist_id=playlist_id, wanted=wanted,
-                   owned=group.owned.to_dict() if group.owned else None)
+        mode, owned = group.mode, group.owned.to_dict() if group.owned else None
+        if mode == "tracks_plus":
+            # These tracks plus the ones already held, from one uploader's folder, replacing the partial copy.
+            mode = "tracks"
+            held = [f.recording_mbid for f in library.folder_files(group.owned.path)] if group.owned and group.owned.path else []
+            wanted = list(dict.fromkeys(wanted + [r for r in held if r]))
+        elif mode == "tracks":
+            owned = None  # a plain tracks-only download adds nothing to an existing folder
+        item = add(group.rg_mbid, mode, source="playlist", playlist_id=playlist_id, wanted=wanted, owned=owned)
         created += 1
         with session() as s:
             choice = s.get(PlaylistAlbum, group.choice.id)
@@ -364,8 +371,8 @@ async def _decide(item: QueueItem, settings: Settings) -> bool:
     if album and album.artist.strip().lower() == "various artists":
         _needs_pick(item, "a Various Artists release is never downloaded unasked")
         return False
-    if item.mode == "tracks":
-        _needs_pick(item, "tracks-only downloads are picked by hand for now")
+    if item.mode == "tracks" and not item.wanted:
+        _save(item, state="done", note="every wanted track is already in the library")
         return False
     editions = await _editions_for(item.rg_mbid)
     if editions is None:
@@ -374,9 +381,25 @@ async def _decide(item: QueueItem, settings: Settings) -> bool:
     candidates, _ = ordered_candidates(search, editions=editions)
     tried = set(item.candidates_tried or [])
     candidates = [c for c in candidates if c.id not in tried]
+    only: dict[int, list[str]] = {}
+    if item.mode == "tracks":
+        # Only folders in which every wanted track can be told apart are eligible.
+        eligible = []
+        for c in candidates:
+            matched = [editions[r] for r in (c.match or {}).get("editions") or [] if r in editions]
+            edition = best_edition(matched, settings)
+            files = tracks.wanted_files(c, edition, item.wanted) if edition else None
+            if files:
+                only[c.id] = files
+                eligible.append(c)
+        candidates = eligible
     rec = recommend.recommend(candidates, editions, settings)
     if rec is None:
-        _none_found(item, settings, "no FLAC folder found" if not candidates else "no folder matched an edition")
+        if item.mode == "tracks" and not candidates and not only:
+            reason = "no folder in which every wanted track can be told apart"
+        else:
+            reason = "no FLAC folder found" if not candidates else "no folder matched an edition"
+        _none_found(item, settings, reason)
         return False
     best = rec.best
     want = TIER_RANK.get(settings.auto_pick_min_tier, TIER_RANK["High"])
@@ -391,8 +414,10 @@ async def _decide(item: QueueItem, settings: Settings) -> bool:
     if len({score_edition(e, settings).score for e in matched}) > 1:
         _needs_pick(item, f"{best.candidate.username}'s folder could be one of {len(matched)} editions the preferences rank differently")
         return False
-    upgrade_of = (item.owned or {}).get("path") if item.mode == "upgrade" else None
-    dl = start_download(best.candidate, item.rg_mbid, best.edition.id, upgrade_of=upgrade_of)
+    # An upgrade replaces the owned copy; so does a tracks-only item for an album already held in part.
+    upgrade_of = (item.owned or {}).get("path") if item.mode == "upgrade" or (item.mode == "tracks" and item.owned) else None
+    wanted = set(only[best.candidate.id]) if item.mode == "tracks" else None
+    dl = start_download(best.candidate, item.rg_mbid, best.edition.id, upgrade_of=upgrade_of, only=wanted)
     _save(item, state="downloading", download_id=dl.id, candidates_tried=sorted(tried | {best.candidate.id}),
           note=f"downloading {best.candidate.username}'s folder ({best.tier}) as the {best.edition.date or ''} {best.edition.country or ''} edition".replace("  ", " "))
     _event(item, f"picked {best.candidate.username}'s folder: {summary}")
@@ -404,6 +429,11 @@ def _next_candidate(item: QueueItem, dl: Download, settings: Settings, why: str)
     if len(tried) >= settings.queue_candidates:
         _save(item, state="failed", candidates_tried=sorted(tried), note=f"{why}; {len(tried)} folders tried")
         _event(item, f"given up after {len(tried)} folders: {why}")
+        return
+    if item.mode == "tracks":
+        # The next folder must also hold every wanted track; _decide works that out (and needs the editions).
+        _save(item, state="searched", download_id=None, import_id=None, candidates_tried=sorted(tried),
+              note=f"{why}; looking for another folder with those tracks")
         return
     candidate = next_best_candidate(dl.search_id, tried, dl.release_mbid)
     if candidate is None:

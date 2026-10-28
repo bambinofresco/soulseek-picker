@@ -82,6 +82,15 @@ FORCE_OVERLAY = """\
 """
 
 
+PARTIAL_OVERLAY = """\
+# Written by the picker for tracks-only imports: a subset of the album is all there is, so the
+# missing tracks must not count against the match. The unmatched-tracks cap stays: files that
+# belong to no position still skip.
+""" + PINNED_WEIGHTS + """\
+    missing_tracks: 0.0
+"""
+
+
 @dataclass
 class BeetsResult:
     imported: bool
@@ -102,6 +111,7 @@ def ensure_config(settings: Settings) -> Path:
         )
     (beets_dir / "pinned.yaml").write_text(PINNED_OVERLAY, encoding="utf-8")
     (beets_dir / "force.yaml").write_text(FORCE_OVERLAY, encoding="utf-8")
+    (beets_dir / "partial.yaml").write_text(PARTIAL_OVERLAY, encoding="utf-8")
     return config
 
 
@@ -207,9 +217,10 @@ async def forget_album(settings: Settings, release_mbid: str, album_dir: Path) -
 
 async def import_album(
     settings: Settings, album_dir: Path, release_mbid: str, *, force: bool = False, pretend: bool = False,
+    partial: bool = False,
 ) -> BeetsResult:
     ensure_config(settings)
-    overlay = "force.yaml" if force else "pinned.yaml"
+    overlay = "force.yaml" if force else "partial.yaml" if partial else "pinned.yaml"
     args = ["-c", str(settings.beets_dir / overlay), "import", "-q", "--search-id", release_mbid]
     if pretend:
         args.append("--pretend")

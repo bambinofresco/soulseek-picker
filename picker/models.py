@@ -116,6 +116,7 @@ class Download(SQLModel, table=True):
     chunked: str | None = None  # "planned" (big folder) | "limit" (uploader queue limit) | None
     refetch_import_id: int | None = None  # re-downloading files that failed this import's integrity check
     upgrade_of: str | None = None  # the library folder this download is meant to replace
+    partial: bool | None = None  # only some of the folder's tracks were requested (tracks-only mode)
     error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None
@@ -156,6 +157,7 @@ class Import(SQLModel, table=True):
     replaced_dir: str | None = None
     upgrade_check: dict | None = Field(default=None, sa_column=Column(JSON))  # importing.compare_upgrade
     upgrade_undone: bool | None = None
+    partial: bool | None = None  # tracks-only: a subset of the album was downloaded (spec 7.1)
     notes: list = json_field(list)  # human-readable warnings for History
     error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)

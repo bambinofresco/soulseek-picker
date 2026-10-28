@@ -49,6 +49,16 @@ class Edition:
     track_counts: list[int] = field(default_factory=list)  # per medium
     lengths: list[list[float | None]] = field(default_factory=list)  # seconds, per medium
     disc_ids: list[list[str]] = field(default_factory=list)  # per medium
+    recordings: list[list[str | None]] = field(default_factory=list)  # recording MBIDs per track, per medium
+
+    def position_of(self, recording_mbid: str) -> tuple[int, int] | None:
+        """(medium index, track index) of a recording on this edition, or None."""
+        want = (recording_mbid or "").lower()
+        for m, row in enumerate(self.recordings):
+            for t, rec in enumerate(row):
+                if rec and rec.lower() == want:
+                    return m, t
+        return None
 
     @property
     def year(self) -> int | None:
@@ -84,13 +94,15 @@ class Edition:
 
 def edition_from_release(release: dict) -> Edition:
     media = sorted(release.get("media", []) or [], key=lambda m: m.get("position") or 0)
-    lengths = []
+    lengths, recordings = [], []
     for medium in media:
-        row = []
+        row, recs = [], []
         for track in medium.get("tracks", []) or []:
             ms = track.get("length") or (track.get("recording") or {}).get("length")
             row.append(ms / 1000 if ms else None)
+            recs.append((track.get("recording") or {}).get("id"))
         lengths.append(row)
+        recordings.append(recs)
     label_info = release.get("label-info", []) or []
     return Edition(
         id=release["id"],
@@ -107,6 +119,7 @@ def edition_from_release(release: dict) -> Edition:
         track_counts=[len(m.get("tracks") or []) or m.get("track-count", 0) for m in media],
         lengths=lengths,
         disc_ids=[[d["id"] for d in m.get("discs", []) or [] if d.get("id")] for m in media],
+        recordings=recordings,
     )
 
 

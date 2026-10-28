@@ -17,6 +17,7 @@
     <td class="mono small" data-label="Folder">{{ i.album_dir or i.source_dir or "" }}</td>
     <td data-label="Outcome"><span class="state state-{{ i.state }}">{{ i.state }}</span>
       {%- if i.upgrade_of %} <span class="badge" title="replaced {{ i.upgrade_of }}">{{ "upgrade undone" if i.upgrade_undone else "upgrade" }}</span>{% endif %}
+      {%- if i.partial %} <span class="badge" title="only the tracks a playlist asked for">partial</span>{% endif %}
       {%- if i.transcode and i.transcode.album.kind in ("lossy", "upsampled") %} <span class="badge warn" title="{{ i.transcode.album.detail }}">{{ "transcode?" if i.transcode.album.kind == "lossy" else "upsampled?" }}</span>{% endif %}
       {%- set rv = rip_verdict(i.rip_check) %}{% if rv == "verified" %} <span class="badge ok" title="{{ i.rip_check.summary }}">verified rip</span>{% elif rv == "mismatch" %} <span class="badge warn" title="{{ i.rip_check.summary }}">rip differs</span>{% endif %}
       {%- if i.tag_check and i.tag_check.kind in ("different", "mixed") %} <span class="badge warn" title="{{ i.tag_check.detail }}">{{ "mixed rips" if i.tag_check.kind == "mixed" else "tags differ" }}</span>{% endif %}

@@ -40,24 +40,30 @@ POSITION_INTERVAL = 30.0  # seconds between queue-position lookups
 REQUEST_SLACK = timedelta(minutes=1)
 
 
-def files_to_fetch(candidate: Candidate, settings: Settings) -> list[dict]:
-    """Audio plus small sidecars: logs, cues, images under the size cap; scans folders optional."""
+def files_to_fetch(candidate: Candidate, settings: Settings, only: set[str] | None = None) -> list[dict]:
+    """Audio plus small sidecars: logs, cues, images under the size cap; scans folders optional.
+
+    `only`: tracks-only mode, the remote file names of the audio files wanted; other audio is left out.
+    """
     max_image = settings.max_sidecar_mb * 1024 * 1024
     out = []
     for f in candidate.files:
         if f.get("in_scans") and not settings.download_scans:
             continue
         kind = f["kind"]
+        if kind == "audio" and only is not None and f["filename"] not in only:
+            continue
         if kind in ("audio", "log", "cue") or (kind == "image" and f["size"] <= max_image):
             out.append({"filename": f["filename"], "size": f["size"], "disc": f.get("disc")})
     return out
 
 
 def start_download(candidate: Candidate, rg_mbid: str, release_mbid: str | None = None,
-                   upgrade_of: str | None = None) -> Download:
-    """`upgrade_of`: the library folder this download replaces once it passes (spec 7.2)."""
+                   upgrade_of: str | None = None, only: set[str] | None = None) -> Download:
+    """`upgrade_of`: the library folder this download replaces once it passes (spec 7.2).
+    `only`: the audio files wanted, for a tracks-only download (spec 7.1)."""
     settings = get_settings()
-    files = files_to_fetch(candidate, settings)
+    files = files_to_fetch(candidate, settings, only)
     with session() as s:
         dl = Download(
             candidate_id=candidate.id,
@@ -65,6 +71,7 @@ def start_download(candidate: Candidate, rg_mbid: str, release_mbid: str | None 
             rg_mbid=rg_mbid,
             release_mbid=release_mbid,
             upgrade_of=upgrade_of,
+            partial=only is not None,
             username=candidate.username,
             folder=candidate.folder,
             destination="",

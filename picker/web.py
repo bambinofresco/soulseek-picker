@@ -764,7 +764,15 @@ async def queue_add(request: Request):
             await albums.ensure_album(rg_mbid)
         except ServiceError as exc:
             raise HTTPException(502, exc.message) from exc
-        queueing.add(rg_mbid, mode, source=form.get("source") or "album")
+        have = None
+        if mode == "upgrade":
+            try:
+                have = await owned.check_album(rg_mbid, get_settings())  # the copy the upgrade replaces
+            except ServiceError:
+                have = None
+            if have is None or not have.path:
+                raise HTTPException(409, "no copy of this album was found in the library to upgrade")
+        queueing.add(rg_mbid, mode, source=form.get("source") or "album", owned=have.to_dict() if have else None)
     back = form.get("back") or request.headers.get("referer") or "/queue"
     return RedirectResponse(back, status_code=303)
 

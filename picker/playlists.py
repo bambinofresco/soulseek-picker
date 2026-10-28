@@ -439,8 +439,9 @@ class Group:
     tracks: list[PlaylistTrack]
     choice: PlaylistAlbum
     owned: owned.Owned | None = None
-    mode: str = "full"  # effective: full | tracks | upgrade | skip
+    mode: str = "full"  # effective: full | tracks | tracks_plus | upgrade | skip
     is_single: bool = False
+    partial_copy: bool = False  # the library holds some of this album and the playlist wants more of it
     estimate_mb: int = 0
 
     @property
@@ -462,7 +463,10 @@ class Review:
     total_mb: int
 
 
-def default_mode(playlist: Playlist, is_single: bool, album_owned: bool, all_tracks_owned: bool) -> str:
+def default_mode(playlist: Playlist, is_single: bool, album_owned: bool, all_tracks_owned: bool,
+                 partial_copy: bool = False) -> str:
+    if partial_copy:
+        return "upgrade"  # the library holds part of the album and the playlist wants more: replace it whole
     if album_owned or all_tracks_owned:
         return "skip"
     if is_single or playlist.full_albums:
@@ -498,18 +502,23 @@ async def review(playlist_id: int, settings: Settings | None = None) -> Review |
                 choices[rg] = choice
         s.commit()
     have = await owned.owned_release_groups(list(grouped), settings) if grouped else {}
-    groups, counts, total = [], {"full": 0, "tracks": 0, "upgrade": 0, "skip": 0, "owned": 0}, 0
+    groups, counts, total = [], {"full": 0, "tracks": 0, "tracks_plus": 0, "upgrade": 0, "skip": 0, "owned": 0}, 0
     for rg, members in grouped.items():
         album = albums.get(rg)
         is_single = bool(album and (album.primary_type or "").lower() in ("single", "ep"))
         album_owned = rg in have
         all_owned = all(t.owned_path for t in members)
         group = Group(rg_mbid=rg, album=album, tracks=members, choice=choices[rg], owned=have.get(rg), is_single=is_single)
-        group.mode = choices[rg].mode or default_mode(playlist, is_single, album_owned, all_owned)
+        held = have.get(rg)
+        expected = album.min_track_count if album and album.min_track_count else None
+        group.partial_copy = bool(held and not all_owned and expected and held.have is not None and held.have < expected)
+        group.mode = choices[rg].mode or default_mode(playlist, is_single, album_owned, all_owned, group.partial_copy)
         if group.mode in ("full", "upgrade"):
             group.estimate_mb = ((album.min_track_count if album and album.min_track_count else len(members)) or 0) * TRACK_MB
         elif group.mode == "tracks":
             group.estimate_mb = group.wanted_tracks * TRACK_MB
+        elif group.mode == "tracks_plus":
+            group.estimate_mb = (group.wanted_tracks + (held.have or 0 if held else 0)) * TRACK_MB
         total += group.estimate_mb
         if album_owned or all_owned:
             counts["owned"] += 1
@@ -536,7 +545,7 @@ def set_options(playlist_id: int, *, full_albums: bool | None = None, prefer_stu
 
 
 def set_mode(playlist_id: int, rg_mbid: str, mode: str | None) -> None:
-    if mode not in (None, "full", "tracks", "upgrade", "skip"):
+    if mode not in (None, "full", "tracks", "tracks_plus", "upgrade", "skip"):
         raise ValueError(f"unknown mode {mode!r}")
     with session() as s:
         choice = s.exec(select(PlaylistAlbum).where(PlaylistAlbum.playlist_id == playlist_id,

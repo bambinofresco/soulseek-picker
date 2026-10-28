@@ -57,6 +57,12 @@
   {% elif check.kind == "same" %}
     <p class="small muted">The files already carry this edition's MusicBrainz ID.</p>
   {% endif %}
+  {% if imp.partial %}
+  <p class="small"><span class="badge">partial album</span> Only the tracks a playlist asked for were downloaded{% if dl %} ({{ dl.files|length }} files including sidecars){% endif %}; the album stays unmonitored in Lidarr so it does not fill the rest from an indexer, and the rip check does not run without the whole disc.
+    {% if imp.state == "imported" and imp.album_dir %}
+    <form class="inline-form" method="post" action="/queue/add"><input type="hidden" name="rg_mbid" value="{{ imp.rg_mbid }}"><input type="hidden" name="mode" value="upgrade"><input type="hidden" name="source" value="album"><button class="small">Upgrade to the full album</button></form>
+    {% endif %}</p>
+  {% endif %}
   {% if imp.upgrade_of %}
   {% set u = imp.upgrade_check or {} %}
   <div class="banner {{ 'ok' if u.better else 'warn' }} upgrade">
