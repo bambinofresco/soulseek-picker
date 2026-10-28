@@ -461,6 +461,20 @@ def test_give_up_starts_the_next_candidate(client, monkeypatch):
     assert started == ["bob"]
 
 
+def test_recommendation_card_once_settled(client, with_editions):
+    seed()
+    set_match("alice", tier="Exact", editions=["jp-cd"], matched_catalogs=["TOCP-50201"], tracks_agree=True,
+              signals=[{"name": "catalog", "weight": 8, "detail": "catalog number"}])
+    set_match("bob", tier="Medium", editions=["uk-cd", "jp-cd"])
+    html = client.get("/album/rg-1/candidates").text
+    assert 'id="recommendation"' in html and "Best pick:</strong> alice" in html
+    assert "Exact by catalog number" in html and "Why not the others?" in html and "<strong>bob</strong>: Medium match" in html
+    assert "Download as 1997-05-28 · JP · CD · Toshiba-EMI · TOCP-50201" in html
+    assert "~" in html and 'data-settled="true"' in html
+    state = client.get("/album/rg-1/candidates/state").json()
+    assert state["settled"] is True
+
+
 def test_candidates_poll_state_and_rows(client):
     seed()
     state = client.get("/album/rg-1/candidates/state").json()

@@ -116,6 +116,12 @@ The one interaction: slskd refuses to enqueue a file that's already in flight fr
 - **Search more** searches the same album again for up to 3 minutes and merges new folders into the table. Rows already there keep their log results and downloads.
 - MusicBrainz editions load while slskd searches, instead of before.
 
+## The recommendation card
+
+Once a search, its matching and the automatic log fetches have settled, a card above the table names the best pick and why: the match tier and how it was verified, log and AccurateRip results, completeness and cover art, bit depth and rate, and the estimated time to obtain the folder. Its **Download** button opens the same confirm form as the row, with the preferred edition preselected; **Why not the others?** gives one short reason per other folder ("one of 3 editions; no log", "queue of 7").
+
+Eligible folders are those at the best tier present. Ties break, in order, on verification (disc ID or a verified log, then catalog number or barcode), the edition preferences, completeness and sidecars, the time estimate, and size. The estimate is queue wait plus size over upload speed, from the response's upload speed and queue length or the speed measured on a download from that user in the last day; an unknown speed counts as slow and a free slot as no queue wait. The Availability column shows the same estimate ("~3 min", "~40 min (queue)").
+
 ## Edition preferences
 
 Settings → Edition preferences decides which pressing wins when several folders match equally well. The match tiers are still the contract (Exact beats High whatever you prefer); within a tier the preference score orders the rows, picks the edition the confirm form preselects among a folder's possible editions, and feeds the recommendation. Every point comes with a reason, shown on the row's **pref** badge on hover ("+ GB", "+ CD", "− remaster").

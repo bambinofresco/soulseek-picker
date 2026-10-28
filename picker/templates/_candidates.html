@@ -7,7 +7,7 @@
 {#- Rows are kept up to date by static/candidates.js: it polls the state URL (row ids and
     versions) and fetches only rows that changed, leaving expanded rows alone. -#}
 <section id="candidates"
-  data-rg="{{ rg_mbid }}" data-qs="{{ qs() }}" data-phase="{{ phase }}"
+  data-rg="{{ rg_mbid }}" data-qs="{{ qs() }}" data-phase="{{ phase }}" data-settled="{{ settled|lower }}"
   {% if active %}data-poll="/album/{{ rg_mbid }}/candidates/state?{{ qs() }}"{% endif %}>
   <div class="toolbar">
     <h2>Soulseek folders</h2>
@@ -46,6 +46,7 @@
   {% endif %}
 
   <div id="candidates-status">{% include "_candidates_status.html" %}</div>
+  {% include "_recommendation.html" %}
 
   {% if candidates %}
   <div class="table-wrap">

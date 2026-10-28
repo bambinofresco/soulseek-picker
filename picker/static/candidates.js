@@ -81,8 +81,8 @@
       return;
     }
     if (section() !== sec) return;
-    if (state.phase !== sec.dataset.phase) {
-      reload(sec); // e.g. the search finished: render the table once
+    if (state.phase !== sec.dataset.phase || String(state.settled) !== sec.dataset.settled) {
+      reload(sec); // e.g. the search finished, or everything settled: render the table (and the recommendation) once
       return;
     }
     const status = document.getElementById("candidates-status");

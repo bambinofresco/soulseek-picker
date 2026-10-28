@@ -68,6 +68,8 @@
     <td>
       {% if c.has_free_slot %}<span class="badge ok">free slot</span>{% else %}<span class="badge">queue {{ c.queue_length }}</span>{% endif %}
       <span class="muted nowrap">{{ c.upload_speed|speed }}</span>
+      {% set est = eta(c) %}
+      <div class="small muted nowrap" title="Estimated time to obtain the folder: {{ est.detail }}">{{ est.short }}</div>
     </td>
     <td class="num">{{ c.total_size|mb }}</td>
     <td class="actions">

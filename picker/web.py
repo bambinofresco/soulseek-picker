@@ -17,7 +17,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlmodel import select
 
-from . import albums, health, importing, lidarr_feed, owned, preferences, prefetching, probe
+from . import albums, health, importing, lidarr_feed, owned, preferences, prefetching, probe, recommend
 from .beets import config_warnings as beets_config_warnings
 from .clients import reset_services, services
 from .clients.http import ServiceError
@@ -258,8 +258,13 @@ async def _candidates_context(rg_mbid: str, params: dict, *, with_editions: bool
         state = [c.match, c.log_info, dl and (dl.state, pct, dl.chunked), imp and imp.state]
         return hashlib.sha1(json.dumps(state, sort_keys=True, default=str).encode()).hexdigest()[:12]
 
+    # The recommendation needs the editions and a settled table (no search, match or log fetch running).
+    measured = recommend.measured_speeds({c.username for c in candidates}) if candidates else {}
+    rec = recommend.recommend(candidates, editions, settings) if with_editions and phase == "rows" and not active else None
+
     return {
         "rg_mbid": rg_mbid, "search": search, "candidates": candidates, "hidden": hidden, "params": params, "qs": qs,
+        "rec": rec, "eta": lambda c: recommend.estimate(c, measured), "settled": not active,
         "sources": sources, "depths": depths, "downloads": downloads, "parsed": parsed, "quality": quality,
         "match_of": match_of, "editions": editions, "target": editions.get(target) if target else None,
         "target_id": target, "rip_quality": rip_quality, "completeness": completeness, "active": active,
@@ -300,6 +305,7 @@ async def album_candidates_state(
     return {
         "phase": ctx["phase"],
         "active": ctx["active"],
+        "settled": ctx["settled"],
         "interval": 2000 if ctx["searching_now"] else 4000,
         "status_html": status,
         "rows": [[c.id, ctx["row_version"](c)] for c in ctx["candidates"]],

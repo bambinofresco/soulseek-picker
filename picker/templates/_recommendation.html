@@ -1,0 +1,31 @@
+{#- The recommendation card (picker/recommend.py): shown once the search, matching and log fetches have settled. -#}
+{% if rec %}
+{% set b = rec.best %}
+<div class="card recommendation" id="recommendation">
+  <p class="rec-title"><strong>Best pick:</strong> {{ b.candidate.username }} · <span class="mono">{{ b.candidate.folder.split("\\")[-1] }}</span></p>
+  <p class="small rec-facts">{{ b.summary|join(" · ") }}</p>
+  <div class="rec-actions" id="rec-action">
+    {% set dl = downloads.get(b.candidate.id) %}
+    {% if dl %}
+      {% set c = b.candidate %}{% include "_download_status.html" %}
+    {% else %}
+      <button class="primary" hx-get="/candidates/{{ b.candidate.id }}/confirm" hx-target="#rec-action" hx-swap="innerHTML">
+        Download{% if b.edition %} as {{ b.edition|edition }}{% endif %}
+      </button>
+    {% endif %}
+    {% if rec.why_not %}
+    <details class="why-not">
+      <summary class="small">Why not the others?</summary>
+      <ul class="small">
+        {% for c, reason in rec.why_not %}<li><strong>{{ c.username }}</strong>: {{ reason }}</li>{% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </div>
+  {% if rec.runner_up %}
+  <p class="small muted">Runner-up: {{ rec.runner_up.candidate.username }} ({{ rec.runner_up.summary[:3]|join(", ") }}{% if rec.runner_up.eta.seconds is not none %}, {{ rec.runner_up.eta.short }}{% endif %})</p>
+  {% endif %}
+</div>
+{% elif phase == "rows" and active %}
+<div class="card recommendation muted small" id="recommendation"><span class="spinner small-spinner"></span> Working out the best pick once the matches and log fetches settle…</div>
+{% endif %}
