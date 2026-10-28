@@ -137,6 +137,10 @@ Settings → Edition preferences decides which pressing wins when several folder
 
 `prefer_original` (Preferences) still breaks ties after the score: earlier editions first, remaster-flagged folders last.
 
+## On a phone
+
+Below 720 px wide, the candidates table becomes a list of cards: match and edition, uploader and folder, source, format, tracks and the time estimate, with the Download button; tap a card for the rest (years, catalog numbers, flags, sidecars, size, and the usual detail). Sorting and filters sit in one **Sort & filter** sheet above the list. Downloads, History and the review list collapse to labelled rows, the Review page stacks its sections with spectrograms and tables scrolling inside their boxes, buttons are at least 44 px tall, and nothing scrolls sideways.
+
 ## Albums you already have
 
 Before any bandwidth is spent, the picker checks whether the album is in the library. The album page shows a banner naming the edition and where it is, from the first source that knows: the picker's own import history (if the folder still exists), Lidarr (track files present; the monitored release is the edition), or the beets library. Find-album results carry an **in library** badge from the local sources (history and beets; Lidarr is asked on the album page only). You can still search and download; the import then stops at placing because the folder exists, since the picker never overwrites anything in the library. Replacing an album you have is the upgrades phase of the spec.

@@ -21,6 +21,8 @@
     {% endif %}
     {% endif %}
     {% if candidates %}
+    {# Wide screens: filters inline in the toolbar (sort by column header). Phones: one Sort & filter sheet, closed until tapped. #}
+    <div class="filters-wide">
     <form class="filters" hx-get="/album/{{ rg_mbid }}/candidates" hx-target="#candidates" hx-swap="outerHTML" hx-trigger="change">
       {% if params.all %}<input type="hidden" name="all" value="true">{% endif %}
       {% if params.sort %}<input type="hidden" name="sort" value="{{ params.sort }}">{% endif %}
@@ -37,6 +39,30 @@
     <a class="toggle" href="#" hx-get="/album/{{ rg_mbid }}/candidates?{{ qs(all=not params.all) }}" hx-target="#candidates" hx-swap="outerHTML">
       {% if params.all %}Default filter{% else %}Show all{% if hidden %} ({{ hidden }} hidden){% endif %}{% endif %}
     </a>
+    </div>
+    <details class="sort-sheet">
+    <summary>Sort &amp; filter</summary>
+    <form class="filters" hx-get="/album/{{ rg_mbid }}/candidates" hx-target="#candidates" hx-swap="outerHTML" hx-trigger="change">
+      {% if params.all %}<input type="hidden" name="all" value="true">{% endif %}
+      <select name="source" aria-label="Source">
+        <option value="">Any source</option>
+        {% for s in sources %}<option value="{{ s }}" {% if params.source == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+      <select name="depth" aria-label="Bit depth">
+        <option value="">Any bit depth</option>
+        {% for d in depths %}<option value="{{ d }}" {% if params.depth == d|string %}selected{% endif %}>{{ d }}-bit</option>{% endfor %}
+      </select>
+      <select name="sort" aria-label="Sort">
+        <option value="">Best first</option>
+        {% for key, label in [("match", "Match"), ("availability", "Availability"), ("source", "Source"), ("format", "Format"), ("tracks", "Tracks"), ("years", "Years"), ("catalog", "Catalog no."), ("flags", "Flags"), ("sidecars", "Sidecars"), ("size", "Size")] %}
+        <option value="{{ key }}" {% if params.sort == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <label class="small"><input type="checkbox" name="rev" value="true" {% if params.rev %}checked{% endif %}> Reverse order</label>
+    </form>
+    <a class="toggle" href="#" hx-get="/album/{{ rg_mbid }}/candidates?{{ qs(all=not params.all) }}" hx-target="#candidates" hx-swap="outerHTML">
+      {% if params.all %}Default filter{% else %}Show all{% if hidden %} ({{ hidden }} hidden){% endif %}{% endif %}
+    </a>
+    </details>
     {% endif %}
   </div>
 

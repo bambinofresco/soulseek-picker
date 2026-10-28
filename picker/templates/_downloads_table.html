@@ -1,7 +1,7 @@
 <div id="downloads" {% if active %}hx-get="/downloads/table" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
 {% if rows %}
 <div class="table-wrap">
-<table class="grid downloads">
+<table class="grid downloads stack">
   <thead><tr><th>Album</th><th>From</th><th>Progress</th><th>State</th><th class="actions"></th></tr></thead>
   <tbody>
   {% for d in rows %}
@@ -10,10 +10,10 @@
   {% set n = file_counts(d) %}
   {% set running = d.state in ("queued", "enqueued", "transferring") %}
   <tr>
-    <td><a href="/album/{{ d.rg_mbid }}">{% if a %}{{ a.artist }} – {{ a.title }}{% else %}{{ d.rg_mbid }}{% endif %}</a>
+    <td data-label="Album"><a href="/album/{{ d.rg_mbid }}">{% if a %}{{ a.artist }} – {{ a.title }}{% else %}{{ d.rg_mbid }}{% endif %}</a>
       <div class="muted small mono folder-name" title="{{ d.folder }}">{{ d.folder.split("\\")[-1] }}</div></td>
-    <td>{{ d.username }}</td>
-    <td>
+    <td data-label="From">{{ d.username }}</td>
+    <td data-label="Progress">
       <progress max="100" value="{{ pct }}"></progress>
       <div class="small">{{ d.files_done }}/{{ d.files|length }} files · {{ d.bytes_done|mb }} of {{ d.bytes_total|mb }}</div>
       {% if running and (d.chunked == "limit" or n.limited) %}
@@ -30,7 +30,7 @@
           for {{ d.queued_since|ago }} (gives up after {{ queue_timeout_hours }} h)</div>
       {% endif %}
     </td>
-    <td>
+    <td data-label="State">
       <span class="state state-{{ d.state }}">{{ d.state }}</span>
       {% if d.error %}<div class="small {% if d.state in ('failed', 'partial') %}error-text{% else %}warn-text{% endif %}">{{ d.error }}</div>{% endif %}
       {% if d.state == "completed" %}<div class="small muted mono">{{ d.destination if not d.legacy_enqueue else "(slskd default folder)" }}</div>{% endif %}

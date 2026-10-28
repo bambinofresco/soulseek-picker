@@ -512,6 +512,18 @@ def test_recommendation_card_once_settled(client, with_editions):
     assert state["settled"] is True
 
 
+def test_phone_layout_hooks(client, with_editions):
+    seed()
+    html = client.get("/album/rg-1/candidates").text
+    assert '<details class="sort-sheet">' in html and 'name="sort" aria-label="Sort"' in html and 'class="filters-wide"' in html
+    assert 'name="rev" value="true"' in html
+    # The phone sort select carries the current sort like the old hidden input did.
+    html = client.get("/album/rg-1/candidates?sort=size&rev=true").text
+    assert '<option value="size" selected>' in html and 'name="rev" value="true" checked' in html
+    assert "No downloads yet" in client.get("/downloads").text
+    assert client.get("/history").status_code == 200
+
+
 def test_candidates_poll_state_and_rows(client):
     seed()
     state = client.get("/album/rg-1/candidates/state").json()

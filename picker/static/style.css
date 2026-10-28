@@ -246,6 +246,61 @@ label.field input { font-family: var(--mono); }
   .topbar { gap: 12px; padding: 10px 12px; }
 }
 
+/* Sort & filter: inline in the toolbar on wide screens (.filters-wide), one closed sheet on phones (.sort-sheet). */
+.filters-wide { display: contents; }
+details.sort-sheet { display: none; }
+
+/* Phones: cards instead of wide tables, bigger buttons, no sticky column, no sideways page scroll. */
+@media (max-width: 720px) {
+  body { overflow-x: hidden; }
+  main { max-width: 100vw; }
+  button, .button { min-height: 44px; }
+  .topbar { flex-wrap: wrap; }
+  .topbar nav { flex-wrap: wrap; gap: 8px 16px; }
+  .banner { overflow-wrap: anywhere; }
+  .topbar nav a { padding: 8px 0; }
+  .filters-wide { display: none; }
+  details.sort-sheet { display: block; flex: 1 1 100%; }
+  details.sort-sheet > summary { cursor: pointer; color: var(--accent); padding: 8px 0; }
+  details.sort-sheet .filters { flex-wrap: wrap; margin: 6px 0; }
+  details.sort-sheet .filters select, details.sort-sheet .filters label { flex: 1 1 100%; min-height: 44px; }
+  details.sort-sheet .toggle { margin-left: 0; display: inline-block; padding: 8px 0; }
+  .toolbar h2 { flex: 1 1 100%; }
+
+  table.candidates { display: block; width: 100%; }
+  table.candidates thead { display: none; }
+  table.candidates tbody.cand-group { display: block; border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; padding: 8px 10px; background: var(--surface); }
+  table.candidates tr.cand { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+  table.candidates tr.cand td { display: block; padding: 2px 0; border: 0; min-width: 0; }
+  table.candidates tr.cand td.folder { flex: 1 1 100%; order: -2; }
+  table.candidates tr.cand td.match { flex: 1 1 100%; order: -1; max-width: none; }
+  table.candidates tr.cand td.years, table.candidates tr.cand td.catalog, table.candidates tr.cand td.flags,
+  table.candidates tr.cand td.sidecars, table.candidates tr.cand td.num { display: none; }
+  table.candidates tbody.cand-group.open tr.cand td { display: block; }
+  table.candidates tr.cand td.actions { flex: 1 1 100%; order: 10; position: static; box-shadow: none; background: transparent; min-width: 0; }
+  table.candidates tr.cand td.actions button, table.candidates tr.cand td.actions .dl-status { white-space: normal; }
+  table.candidates tr.cand td.folder::after { content: "tap for details"; display: block; color: var(--muted); font-size: 0.8em; }
+  table.candidates tbody.cand-group.open tr.cand td.folder::after { content: "tap to close"; }
+  table.candidates tbody.cand-group.open tr.cand { background: transparent; }
+  table.candidates tr.detail:not([hidden]) { display: block; }
+  table.candidates tr.detail:not([hidden]) > td { display: block; padding: 8px 0 0; overflow-x: auto; max-width: calc(100vw - 48px); }
+  .detail-grid { grid-template-columns: 1fr; }
+  .recommendation .rec-actions { flex-direction: column; align-items: stretch; }
+
+  table.stack, table.stack tbody, table.stack tr { display: block; width: 100%; }
+  table.stack thead { display: none; }
+  table.stack tr { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; padding: 6px 10px; background: var(--surface); }
+  table.stack td { display: block; padding: 4px 0; border: 0; min-width: 0; overflow-wrap: anywhere; }
+  table.stack td[data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: 0.8em; margin-bottom: 2px; }
+  table.stack td.actions { position: static; box-shadow: none; background: transparent; }
+  table.stack td.actions form, table.stack td.actions .button { display: block; margin: 4px 0; }
+  table.stack td.actions button, table.stack td.actions .button { width: 100%; text-align: center; }
+  .spectrograms { grid-template-columns: 1fr; }
+  .table-wrap > table:not(.stack):not(.candidates) { min-width: 100%; }
+  pre.output { max-width: 100%; overflow-x: auto; }
+  label.field input, label.field select { min-height: 44px; }
+}
+
 /* Candidates and downloads tables: fit the window, wrap long text, keep actions in view. */
 table.candidates, table.downloads { font-size: 0.9em; }
 table.candidates th, table.candidates td { padding: 5px 7px; }

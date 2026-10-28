@@ -9,16 +9,16 @@
   {% else %}
   <p class="small muted">{{ rows|length }} import{{ "s" if rows|length != 1 }}. Each row shows the checks; open the album for spectrograms and the full detail.</p>
   <div class="table-wrap">
-  <table class="grid review-list">
+  <table class="grid review-list stack">
     <thead><tr><th>Album</th><th>Edition</th><th>Checks</th><th>Waiting because</th><th class="actions"></th></tr></thead>
     <tbody>
     {% for r in rows %}
     {% set imp = r.imp %}
     <tr>
-      <td><a href="/imports/{{ imp.id }}">{% if r.album %}{{ r.album.artist }} – {{ r.album.title }}{% else %}{{ imp.rg_mbid }}{% endif %}</a>
+      <td data-label="Album"><a href="/imports/{{ imp.id }}">{% if r.album %}{{ r.album.artist }} – {{ r.album.title }}{% else %}{{ imp.rg_mbid }}{% endif %}</a>
         <div class="small muted">from {{ imp.username or "Lidarr" }} · <span class="state state-{{ imp.state }}">{{ imp.state }}</span> · {{ imp.created_at|ago }} ago</div></td>
-      <td class="small">{% if r.edition %}{{ r.edition|edition }}{% elif imp.release_mbid %}<span class="mono">{{ imp.release_mbid[:8] }}</span>{% else %}<span class="warn-text">none chosen</span>{% endif %}</td>
-      <td class="small checks">
+      <td class="small" data-label="Edition">{% if r.edition %}{{ r.edition|edition }}{% elif imp.release_mbid %}<span class="mono">{{ imp.release_mbid[:8] }}</span>{% else %}<span class="warn-text">none chosen</span>{% endif %}</td>
+      <td class="small checks" data-label="Checks"><span class="badges">
         {% set bad = (imp.integrity or [])|rejectattr("ok")|list %}
         {% if imp.integrity %}<span class="badge {{ 'warn' if bad else 'ok' }}">{% if bad %}{{ bad|length }} damaged{% else %}{{ imp.integrity|length }} files ok{% endif %}</span>{% endif %}
         {% set tc = (imp.transcode or {}).get("album") %}
@@ -28,8 +28,8 @@
         {% set rv = rip_verdict(imp.rip_check) %}
         {% if rv == "verified" %}<span class="badge ok" title="{{ imp.rip_check.summary }}">verified rip</span>{% elif rv == "mismatch" %}<span class="badge warn" title="{{ imp.rip_check.summary }}">{{ imp.rip_check.mismatched|length }} track{{ "s" if imp.rip_check.mismatched|length != 1 }} differ</span>{% elif rv == "no_match" %}<span class="badge warn" title="{{ imp.rip_check.summary }}">rip unverified</span>{% endif %}
         {% if imp.beets_match and imp.beets_match.similarity is defined %}<span class="badge warn" title="beets rated the match {{ (imp.beets_match.similarity * 100)|round(1) }}%">beets {{ (imp.beets_match.similarity * 100)|round|int }}%</span>{% endif %}
-      </td>
-      <td class="small">{% if imp.state == "review" %}{{ r.hold or "every check passed" }}{% elif imp.state == "skipped" %}beets skipped it{% elif imp.error %}{{ imp.error }}{% else %}{{ imp.state }}{% endif %}</td>
+      </span></td>
+      <td class="small" data-label="Waiting">{% if imp.state == "review" %}{{ r.hold or "every check passed" }}{% elif imp.state == "skipped" %}beets skipped it{% elif imp.error %}{{ imp.error }}{% else %}{{ imp.state }}{% endif %}</td>
       <td class="actions">
         {% if imp.state == "review" %}
           <form method="post" action="/imports/{{ imp.id }}/import"><input type="hidden" name="back" value="review"><button class="primary" {% if not imp.release_mbid %}disabled{% endif %}>Import</button></form>
