@@ -26,13 +26,13 @@ from pathlib import Path
 
 from sqlmodel import select
 
-from . import albums, audio, beets, library, ripverify, tagcheck
+from . import albums, audio, beets, library, queueing, ripverify, tagcheck
 from .clients import services
 from .clients.http import ServiceError
 from .config import Settings, get_settings
 from .db import session
 from .jobs import JobFailed, handler, log_event, worker
-from .models import Album, Download, Import, Job, utcnow
+from .models import Album, Candidate, Download, Import, Job, utcnow
 from .naming import FolderValues, album_folder, clean_component, clean_value
 
 
@@ -276,6 +276,24 @@ async def run_import(job: Job) -> None:
         raise
 
 
+def match_tier(imp: Import) -> str | None:
+    """The match tier of the folder this import came from (None for Lidarr's own imports)."""
+    if not imp.download_id:
+        return None
+    with session() as s:
+        dl = s.get(Download, imp.download_id)
+        candidate = s.get(Candidate, dl.candidate_id) if dl else None
+    return ((candidate.match or {}).get("tier") if candidate else None)
+
+
+def new_items_policy(imp: Import, settings: Settings) -> str:
+    """Artists a run adds to Lidarr get monitor-new-items none: a playlist can touch dozens of
+    artists the user wanted one song from, and the normal default would have Lidarr grab every
+    future release of theirs. Hand-picked imports keep the setting."""
+    item = queueing.item_for_download(imp.download_id) if imp.download_id else None
+    return "none" if item is not None and item.source == "playlist" else settings.lidarr_monitor_new_items
+
+
 def review_reason(imp: Import, settings: Settings) -> str | None:
     """Why this import waits on the Review page instead of importing by itself (None: import now).
 
@@ -296,6 +314,8 @@ def review_reason(imp: Import, settings: Settings) -> str | None:
         if kind is None or failed:
             return "the spectrum check could not run"
     kind = (imp.tag_check or {}).get("kind")
+    if kind == "different" and match_tier(imp) == "Exact":
+        kind = None  # a disc ID, catalog number or barcode agreed with the chosen edition: physical evidence beats tags
     if kind == "different":
         return "the files are tagged as a different edition"
     if kind == "mixed":
@@ -422,9 +442,9 @@ async def _artist_dir(imp: Import, album: Album, settings: Settings) -> Path:
             quality_profile_id=settings.lidarr_quality_profile_id,
             metadata_profile_id=settings.lidarr_metadata_profile_id,
             monitor=settings.lidarr_monitor,
-            monitor_new_items=settings.lidarr_monitor_new_items,
+            monitor_new_items=new_items_policy(imp, settings),
         )
-        _note(imp, f"Added {album.artist} to Lidarr (monitor {settings.lidarr_monitor}, new items {settings.lidarr_monitor_new_items})")
+        _note(imp, f"Added {album.artist} to Lidarr (monitor {settings.lidarr_monitor}, new items {new_items_policy(imp, settings)})")
         # Wait for the refresh so the album exists in Lidarr before the edition is selected.
         cmd = await lidarr.command("RefreshArtist", artistIds=[artist["id"]])
         await lidarr.wait_for_command(cmd["id"])

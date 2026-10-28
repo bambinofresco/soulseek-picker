@@ -214,6 +214,31 @@ class PlaylistAlbum(SQLModel, table=True):
     queue_item_id: int | None = None
 
 
+class QueueItem(SQLModel, table=True):
+    """One album the picker should obtain on its own (picker/queueing.py)."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    rg_mbid: str = Field(index=True)
+    mode: str = "full"  # full | tracks | upgrade
+    wanted: list = json_field(list)  # recording MBIDs, for tracks mode
+    owned: dict | None = Field(default=None, sa_column=Column(JSON))  # owned.Owned.to_dict(), for upgrades
+    source: str = "album"  # playlist | album | search | stuck
+    playlist_id: int | None = Field(default=None, index=True)
+    # held | queued | searching | searched | downloading | importing | done
+    # | needs_pick | none_found | review | failed | skipped | cancelled
+    state: str = "queued"
+    note: str | None = None
+    search_id: int | None = None
+    download_id: int | None = None
+    import_id: int | None = None
+    candidates_tried: list = json_field(list)
+    attempts: int = 0  # searches that found nothing
+    next_try: datetime | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+    finished_at: datetime | None = None
+
+
 class LibraryFile(SQLModel, table=True):
     """One audio file under the music directory, as the library index last saw it (picker/library.py)."""
 

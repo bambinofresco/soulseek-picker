@@ -219,8 +219,11 @@ progress { width: 140px; vertical-align: middle; }
 
 .progress-line { display: flex; align-items: center; gap: 8px; }
 
-/* Playlists */
+/* Playlists and the queue */
 form.upload { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+form.inline-form { display: inline-block; margin: 0 0 0 6px; }
+.run-panel h3 { font-size: 1em; margin: 12px 0 6px; }
+.start-run form { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .playlist-options form { display: flex; gap: 20px; flex-wrap: wrap; }
 .playlist-options label { display: flex; gap: 6px; align-items: baseline; }
 p.counts { margin: 0 0 12px; }

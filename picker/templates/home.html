@@ -17,6 +17,13 @@
     <h2>Stuck in Lidarr</h2>
     {% if lidarr_configured %}
     <form method="post" action="/lidarr/stuck/refresh"><button class="small">Refresh</button></form>
+    {% if stuck.albums %}
+    <form method="post" action="/queue/add" onsubmit="return confirm('Queue every stuck album? Each is searched and the recommended folder downloaded when its match is strong enough.')">
+      {% for a in stuck.albums if a.rg_mbid %}<input type="hidden" name="rg_mbid" value="{{ a.rg_mbid }}">{% endfor %}
+      <input type="hidden" name="source" value="stuck"><input type="hidden" name="back" value="/queue">
+      <button class="small" title="Search, pick and download these on their own">Add all to queue</button>
+    </form>
+    {% endif %}
     <span class="small muted">{% if stuck.checked %}checked {{ stuck.checked[:16]|replace("T", " ") }} UTC{% else %}not checked yet{% endif %}</span>
     {% endif %}
   </div>

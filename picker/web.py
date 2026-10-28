@@ -17,7 +17,8 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlmodel import select
 
-from . import albums, health, importing, library, lidarr_feed, owned, playlists, preferences, prefetching, probe, recommend, ripverify
+from . import (albums, health, importing, library, lidarr_feed, owned, playlists, preferences, prefetching, probe, queueing,
+               recommend, ripverify)
 from .queries import normalize as _normalize
 from .beets import config_warnings as beets_config_warnings, explain_skip as beets_explain_skip
 from .clients import reset_services, services
@@ -26,7 +27,7 @@ from .clients.musicbrainz import parse_mb_url
 from .config import SECRET_FIELDS, Settings, env_locked, get_settings, save_settings
 from .db import session
 from .downloading import downloads_for_search, request_give_up, retry_failed_files, start_download
-from .models import Album, Candidate, Download, Import, Job, JobEvent, Search, utcnow
+from .models import Album, Candidate, Download, Import, Job, JobEvent, Playlist, Search, utcnow
 from .editions import Edition
 from .naming import FolderValues, album_folder, unknown_tokens
 from .matching import completeness, rip_quality
@@ -170,7 +171,8 @@ async def album_page(request: Request, rg_mbid: str, search: bool = False):
     have = await owned.check_album(rg_mbid, get_settings())
     editions, _ = (await _editions(rg_mbid)) if have and have.release_mbid else ([], None)
     return render(request, "album.html", album=album, search=latest_search(rg_mbid), have=have,
-                  have_edition=next((e for e in editions if e.id == have.release_mbid), None) if have else None)
+                  have_edition=next((e for e in editions if e.id == have.release_mbid), None) if have else None,
+                  queue_item=queueing.active_item(rg_mbid))
 
 
 async def _editions(rg_mbid: str) -> tuple[list[Edition], str | None]:
@@ -713,6 +715,59 @@ async def playlist_delete(playlist_id: int):
     return RedirectResponse("/playlists", status_code=303)
 
 
+# The queue and runs
+
+@router.post("/playlists/{playlist_id}/run/{action}")
+async def playlist_run(playlist_id: int, action: str):
+    if action == "start":
+        await queueing.start_run(playlist_id, get_settings())
+    elif action in ("pause", "resume", "cancel"):
+        queueing.set_playlist_state(playlist_id, {"pause": "paused", "resume": "running", "cancel": "cancelled"}[action])
+    else:
+        raise HTTPException(404, "unknown action")
+    return RedirectResponse(f"/playlists/{playlist_id}", status_code=303)
+
+
+@router.get("/playlists/{playlist_id}/run", response_class=HTMLResponse)
+async def playlist_run_panel(request: Request, playlist_id: int):
+    with session() as s:
+        playlist = s.get(Playlist, playlist_id)
+    if playlist is None:
+        raise HTTPException(404)
+    return render(request, "_run_panel.html", playlist=playlist, run=queueing.summary(playlist_id))
+
+
+@router.get("/queue", response_class=HTMLResponse)
+async def queue_page(request: Request):
+    return render(request, "queue.html", run=queueing.summary(limit=200), active_states=queueing.ACTIVE + queueing.WAITING)
+
+
+@router.post("/queue/add")
+async def queue_add(request: Request):
+    form = await request.form()
+    rg_mbids = [v.strip().lower() for v in form.getlist("rg_mbid") if v and v.strip()]
+    mode = form.get("mode") or "full"
+    for rg_mbid in rg_mbids:
+        try:
+            await albums.ensure_album(rg_mbid)
+        except ServiceError as exc:
+            raise HTTPException(502, exc.message) from exc
+        queueing.add(rg_mbid, mode, source=form.get("source") or "album")
+    back = form.get("back") or request.headers.get("referer") or "/queue"
+    return RedirectResponse(back, status_code=303)
+
+
+@router.post("/queue/{item_id}/{action}")
+async def queue_item_action(request: Request, item_id: int, action: str):
+    if action == "skip":
+        queueing.skip(item_id)
+    elif action == "retry":
+        queueing.requeue(item_id)
+    else:
+        raise HTTPException(404, "unknown action")
+    return RedirectResponse(request.headers.get("referer") or "/queue", status_code=303)
+
+
 @router.get("/library", response_class=HTMLResponse)
 async def library_page(request: Request):
     with session() as s:
@@ -752,6 +807,7 @@ FORM_SECTIONS = {
     ],
     "Edition preferences": ["avoid_remasters", "preferred_countries", "preferred_sources", "preferred_depth",
                             "avoid_flags", "prefer_flags"],
+    "Queue": ["auto_pick_min_tier", "queue_concurrency", "queue_candidates", "queue_retry_days"],
     "Lidarr defaults for new artists": [
         "lidarr_root_folder", "lidarr_quality_profile_id", "lidarr_metadata_profile_id",
         "lidarr_monitor", "lidarr_monitor_new_items",

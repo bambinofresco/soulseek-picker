@@ -1,0 +1,52 @@
+{% set open = run.open %}
+<section id="run" class="card run-panel" {% if open %}hx-get="/playlists/{{ playlist.id }}/run" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+  <div class="toolbar">
+    <h2>Run</h2>
+    <span class="state state-{{ playlist.state }}">{{ playlist.state }}</span>
+    {% if playlist.state == "running" %}<form method="post" action="/playlists/{{ playlist.id }}/run/pause"><button class="small">Pause</button></form>{% endif %}
+    {% if playlist.state == "paused" %}<form method="post" action="/playlists/{{ playlist.id }}/run/resume"><button class="small">Resume</button></form>{% endif %}
+    {% if playlist.state in ("running", "paused") %}<form method="post" action="/playlists/{{ playlist.id }}/run/cancel" onsubmit="return confirm('Cancel the run? Albums not yet downloading are closed; running downloads finish.')"><button class="small danger">Cancel run</button></form>{% endif %}
+    <a class="small" href="/queue">Whole queue</a>
+  </div>
+  <p class="counts">
+    {% for state in ["queued", "searching", "searched", "downloading", "importing", "review", "needs_pick", "none_found", "done", "failed", "skipped", "cancelled"] %}{% if run.counts.get(state) %}<span class="badge {% if state == 'done' %}ok{% elif state in ('review', 'needs_pick', 'failed') %}warn{% endif %}">{{ run.counts[state] }} {{ state|replace("_", " ") }}</span> {% endif %}{% endfor %}
+  </p>
+
+  {% set picks = run.where("needs_pick") %}
+  {% set reviews = run.where("review") %}
+  {% if picks or reviews %}
+  <h3>Waiting for you</h3>
+  <ul class="plain">
+    {% for i in reviews %}{% set a = run.albums.get(i.rg_mbid) %}
+    <li><span class="badge warn">review</span> <a href="/imports/{{ i.import_id }}">{% if a %}{{ a.artist }} — {{ a.title }}{% else %}{{ i.rg_mbid[:8] }}{% endif %}</a> <span class="muted small">{{ i.note }}</span></li>
+    {% endfor %}
+    {% for i in picks %}{% set a = run.albums.get(i.rg_mbid) %}
+    <li><span class="badge warn">pick</span> <a href="/album/{{ i.rg_mbid }}">{% if a %}{{ a.artist }} — {{ a.title }}{% else %}{{ i.rg_mbid[:8] }}{% endif %}</a> <span class="muted small">{{ i.note }}</span>
+      <form class="inline-form" method="post" action="/queue/{{ i.id }}/skip"><button class="small">Skip</button></form></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% set busy = run.where("searching", "searched", "downloading", "importing") %}
+  {% if busy %}
+  <h3>Working</h3>
+  <ul class="plain">
+    {% for i in busy %}{% set a = run.albums.get(i.rg_mbid) %}
+    <li><span class="badge">{{ i.state }}</span> <a href="{% if i.state == 'downloading' %}/downloads{% else %}/album/{{ i.rg_mbid }}{% endif %}">{% if a %}{{ a.artist }} — {{ a.title }}{% else %}{{ i.rg_mbid[:8] }}{% endif %}</a> <span class="muted small">{{ i.note }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% set rest = run.where("queued", "none_found", "failed", "done", "skipped", "cancelled") %}
+  {% if rest %}
+  <details>
+    <summary class="small">{{ rest|length }} other item{{ "s" if rest|length != 1 }}</summary>
+    <ul class="plain small">
+      {% for i in rest %}{% set a = run.albums.get(i.rg_mbid) %}
+      <li><span class="badge {% if i.state == 'done' %}ok{% elif i.state == 'failed' %}warn{% endif %}">{{ i.state|replace("_", " ") }}</span> <a href="/album/{{ i.rg_mbid }}">{% if a %}{{ a.artist }} — {{ a.title }}{% else %}{{ i.rg_mbid[:8] }}{% endif %}</a> <span class="muted">{{ i.note }}</span>
+        {% if i.state in ("failed", "none_found", "skipped", "cancelled") %}<form class="inline-form" method="post" action="/queue/{{ i.id }}/retry"><button class="small">Try again</button></form>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</section>

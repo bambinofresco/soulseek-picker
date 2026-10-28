@@ -15,7 +15,8 @@
       <td>{{ rg.artist_name }}</td>
       <td>{{ rg["primary-type"] or "" }}{% for t in rg.get("secondary-types", []) %} · {{ t }}{% endfor %}</td>
       <td>{{ rg["first-release-date"] or "" }}</td>
-      <td><a class="button" href="/album/{{ rg.id }}?search=1">Pick</a></td>
+      <td class="nowrap"><a class="button" href="/album/{{ rg.id }}?search=1">Pick</a>
+        <form class="inline-form" method="post" action="/queue/add"><input type="hidden" name="rg_mbid" value="{{ rg.id }}"><input type="hidden" name="source" value="search"><button class="small" title="Search, pick and download on its own">Add to queue</button></form></td>
     </tr>
     {% endfor %}
     </tbody>

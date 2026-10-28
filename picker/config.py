@@ -75,6 +75,11 @@ class Settings(BaseModel):
     avoid_flags: str = ""  # e.g. "Deluxe, Anniversary"
     prefer_flags: str = ""  # e.g. "MFSL, Japan"
     auto_import: bool = True  # import straight away when every check passes; otherwise wait on Review
+    # The queue (picker/queueing.py): albums the picker searches, picks and downloads on its own.
+    auto_pick_min_tier: str = "High"  # the lowest match tier the queue downloads without asking (Exact | High | Medium)
+    queue_concurrency: int = 2  # downloads the queue runs at once
+    queue_candidates: int = 3  # folders tried per album before it is given up
+    queue_retry_days: int = 7  # wait before searching again for an album nothing was found for
     stuck_days: int = 3
     stall_timeout_minutes: int = 30  # bytes started flowing, then stopped
     queue_timeout_hours: int = 6  # waiting in the uploader's queue
@@ -95,6 +100,14 @@ class Settings(BaseModel):
         value = (value or "any").strip().lower()
         if value not in ("16", "24", "any"):
             raise ValueError("preferred_depth must be 16, 24 or any")
+        return value
+
+    @field_validator("auto_pick_min_tier")
+    @classmethod
+    def _tier_choice(cls, value: str) -> str:
+        value = (value or "High").strip().capitalize()
+        if value not in ("Exact", "High", "Medium"):
+            raise ValueError("auto_pick_min_tier must be Exact, High or Medium")
         return value
 
     @field_validator("album_folder_template")

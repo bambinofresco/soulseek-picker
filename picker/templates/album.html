@@ -7,6 +7,8 @@
     {% if album.first_release_date %} · {{ album.first_release_date }}{% endif %}
     {% if album.primary_type %} · {{ album.primary_type }}{% endif %}
     · <a href="https://musicbrainz.org/release-group/{{ album.rg_mbid }}" target="_blank" rel="noopener">MusicBrainz</a>
+    {% if queue_item %} · <span class="badge {% if queue_item.state == 'done' %}ok{% elif queue_item.state in ('needs_pick', 'review', 'failed') %}warn{% endif %}" title="{{ queue_item.note or '' }}">queue: {{ queue_item.state|replace("_", " ") }}</span>
+    {% else %} <form class="inline-form" method="post" action="/queue/add"><input type="hidden" name="rg_mbid" value="{{ album.rg_mbid }}"><input type="hidden" name="source" value="album"><button class="small" title="Search, pick and download on its own">Add to queue</button></form>{% endif %}
   </p>
   {% if request.query_params.get("no_next") %}
   <p class="banner warn">No other candidate left for this search. Try searching again.</p>

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Queue · Soulseek picker{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <h1>Queue</h1>
+  <span class="muted small">{{ run.open }} open</span>
+</div>
+<p class="small muted">Albums the picker searches, picks and downloads on its own: from playlist runs, <strong>Add to queue</strong> on search results and album pages, and <strong>Add all</strong> on the Stuck-in-Lidarr list. It downloads only the recommended folder, and only when its match reaches the auto-pick tier; anything weaker waits for you here.</p>
+
+<section class="card">
+  <form method="post" action="/queue/add" class="upload">
+    <input name="rg_mbid" placeholder="MusicBrainz release-group ID" autocomplete="off" required>
+    <select name="mode"><option value="full">Full album</option><option value="upgrade">Upgrade</option></select>
+    <input type="hidden" name="source" value="album">
+    <input type="hidden" name="back" value="/queue">
+    <button type="submit">Add to queue</button>
+  </form>
+</section>
+
+{% if run.items %}
+<div class="table-wrap">
+<table class="grid stack">
+  <thead><tr><th>Album</th><th>Mode</th><th>From</th><th>State</th><th>Note</th><th>Updated</th><th></th></tr></thead>
+  <tbody>
+  {% for i in run.items %}{% set a = run.albums.get(i.rg_mbid) %}
+  <tr>
+    <td data-label="Album"><a href="/album/{{ i.rg_mbid }}">{% if a %}{{ a.artist }} — {{ a.title }}{% else %}<span class="mono">{{ i.rg_mbid[:8] }}</span>{% endif %}</a></td>
+    <td data-label="Mode">{{ i.mode }}</td>
+    <td data-label="From">{{ i.source }}{% if i.playlist_id %} <a class="small" href="/playlists/{{ i.playlist_id }}">playlist</a>{% endif %}</td>
+    <td data-label="State"><span class="badge {% if i.state == 'done' %}ok{% elif i.state in ('review', 'needs_pick', 'failed') %}warn{% endif %}">{{ i.state|replace("_", " ") }}</span>
+      {% if i.state == "review" and i.import_id %}<a class="small" href="/imports/{{ i.import_id }}">review</a>{% endif %}
+      {% if i.state == "downloading" %}<a class="small" href="/downloads">downloads</a>{% endif %}
+      {% if i.next_try and i.state in ("none_found", "queued") %}<span class="muted small">next try {{ i.next_try|local }}</span>{% endif %}</td>
+    <td data-label="Note" class="small">{{ i.note or "" }}</td>
+    <td data-label="Updated" class="nowrap muted small">{{ i.updated_at|local }}</td>
+    <td>
+      {% if i.state in active_states %}<form class="inline-form" method="post" action="/queue/{{ i.id }}/skip"><button class="small">Skip</button></form>{% endif %}
+      {% if i.state in ("failed", "none_found", "needs_pick", "skipped", "cancelled") %}<form class="inline-form" method="post" action="/queue/{{ i.id }}/retry"><button class="small">Try again</button></form>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">Nothing queued yet.</p>
+{% endif %}
+{% endblock %}
