@@ -21,6 +21,7 @@ import logging
 import re
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
+from datetime import timedelta
 
 from sqlmodel import select
 
@@ -139,6 +140,72 @@ def create_playlist(name: str, text: str) -> Playlist:
 def first_artist(text: str) -> str:
     """Exportify lists every credited artist, comma-separated; the first is the main one."""
     return (text or "").split(", ")[0].strip()
+
+
+def find_by_name(name: str) -> Playlist | None:
+    want = (name or "").strip().lower()
+    with session() as s:
+        for playlist in s.exec(select(Playlist).order_by(Playlist.id.desc())):
+            if playlist.name.strip().lower() == want:
+                return playlist
+    return None
+
+
+def _row_keys(row: dict) -> list[tuple]:
+    keys = []
+    if row.get("uri"):
+        keys.append(("uri", row["uri"]))
+    if row.get("isrc"):
+        keys.append(("isrc", row["isrc"]))
+    keys.append(("name", normalize(row.get("title") or ""), normalize(first_artist(row.get("artist") or "")),
+                 normalize(row.get("album") or "")))
+    return keys
+
+
+def update_playlist(playlist_id: int, text: str) -> dict:
+    """A new export of the same playlist: rows are matched to the existing ones (by Spotify URI, then
+    ISRC, then title, artist and album), kept with everything already decided about them, new rows
+    are added and resolved, rows that left the CSV are removed. Albums' choices persist; a playlist
+    that has run keeps running, and its M3U8 and Plex playlist are brought in step."""
+    rows = parse_csv(text)
+    with session() as s:
+        existing = s.exec(select(PlaylistTrack).where(PlaylistTrack.playlist_id == playlist_id)).all()
+    pools: dict[tuple, PlaylistTrack] = {}
+    for track in existing:
+        for key in _row_keys({"uri": track.uri, "isrc": track.isrc, "title": track.title, "artist": track.artist, "album": track.album}):
+            pools.setdefault(key, track)
+    kept, added, matched_ids = 0, 0, set()
+    with session() as s:
+        for row in rows:
+            track = next((pools[k] for k in _row_keys(row) if k in pools and pools[k].id not in matched_ids), None)
+            if track is not None:
+                matched_ids.add(track.id)
+                track.position = row["position"]
+                track.uri = track.uri or row.get("uri")
+                track.isrc = track.isrc or row.get("isrc")
+                track.duration_ms = track.duration_ms or row.get("duration_ms")
+                s.add(track)
+                kept += 1
+            else:
+                s.add(PlaylistTrack(playlist_id=playlist_id, **row))
+                added += 1
+        removed = 0
+        for track in existing:
+            if track.id not in matched_ids:
+                s.delete(track)
+                removed += 1
+        playlist = s.get(Playlist, playlist_id)
+        playlist.csv_hash = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:16]
+        s.add(playlist)
+        s.commit()
+        has_run = playlist.state in ("running", "paused", "done")
+    if added:
+        queue_resolve(playlist_id)
+    if has_run and removed:
+        from . import plexsync  # imported here: plexsync imports this module
+
+        plexsync.queue_sync(playlist_id, timedelta(0))
+    return {"kept": kept, "added": added, "removed": removed}
 
 
 # Albums a recording is on --------------------------------------------------------------------
@@ -348,7 +415,9 @@ def queue_resolve(playlist_id: int) -> Job | None:
         if any(j.payload.get("playlist_id") == playlist_id for j in pending):
             return None
         playlist = s.get(Playlist, playlist_id)
-        playlist.state, playlist.error = "resolving", None
+        if playlist.state in ("resolving", "review"):
+            playlist.state = "resolving"  # a playlist that has run keeps its run state; its new rows resolve alongside
+        playlist.error = None
         s.add(playlist)
         s.commit()
     return worker.enqueue("resolve", {"playlist_id": playlist_id})
@@ -415,7 +484,8 @@ async def run_resolve(job: Job) -> None:
     _save_tracks(todo, playlist_id, done)
     with session() as s:
         playlist = s.get(Playlist, playlist_id)
-        playlist.state = "review"
+        if playlist.state == "resolving":
+            playlist.state = "review"
         s.add(playlist)
         s.commit()
     resolved = sum(1 for t in todo if t.resolution not in (None, "none"))
@@ -461,6 +531,8 @@ class Review:
     attention: list[PlaylistTrack]
     counts: dict
     total_mb: int
+    resolving: bool = False  # rows still to be matched (the page polls while so)
+    new_groups: list[Group] = field(default_factory=list)  # albums with no queue item yet, on a playlist that has run
 
 
 def default_mode(playlist: Playlist, is_single: bool, album_owned: bool, all_tracks_owned: bool,
@@ -525,7 +597,11 @@ async def review(playlist_id: int, settings: Settings | None = None) -> Review |
         if group.mode in counts:
             counts[group.mode] += 1
         groups.append(group)
-    return Review(playlist=playlist, tracks=tracks, groups=groups, attention=attention, counts=counts, total_mb=total)
+    resolving = playlist.state == "resolving" or any(t.resolution is None and not t.dropped for t in tracks)
+    has_run = playlist.state in ("running", "paused", "done")
+    new_groups = [g for g in groups if has_run and g.choice.queue_item_id is None and g.mode != "skip"]
+    return Review(playlist=playlist, tracks=tracks, groups=groups, attention=attention, counts=counts, total_mb=total,
+                  resolving=resolving, new_groups=new_groups)
 
 
 # Actions ------------------------------------------------------------------------------------

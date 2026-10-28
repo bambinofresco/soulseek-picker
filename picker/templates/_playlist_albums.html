@@ -1,7 +1,7 @@
 {% set p = r.playlist %}
 {% set total = r.tracks|length %}
-<div id="albums" {% if p.state == "resolving" %}hx-get="/playlists/{{ p.id }}/albums" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
-{% if p.state == "resolving" %}
+<div id="albums" {% if r.resolving %}hx-get="/playlists/{{ p.id }}/albums" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+{% if r.resolving %}
 <p class="banner"><span class="badge">resolving</span> {{ p.resolved }} of {{ total }} rows matched to MusicBrainz so far…</p>
 {% endif %}
 

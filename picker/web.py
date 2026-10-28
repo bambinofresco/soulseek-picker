@@ -25,7 +25,7 @@ from .clients import reset_services, services
 from .clients.http import ServiceError
 from .clients.musicbrainz import parse_mb_url
 from .config import SECRET_FIELDS, Settings, env_locked, get_settings, save_settings
-from .db import session
+from .db import cache_get, cache_put, session
 from .downloading import downloads_for_search, request_give_up, retry_failed_files, start_download
 from .models import Album, Candidate, Download, Import, Job, JobEvent, Playlist, Search, utcnow
 from .editions import Edition
@@ -623,9 +623,33 @@ async def playlist_upload(request: Request):
         text = raw.decode("latin-1")
     name = (form.get("name") or "").strip() or Path(upload.filename).stem
     try:
-        playlist = playlists.create_playlist(name, text)
+        playlists.parse_csv(text)
     except ValueError as exc:
         return render(request, "playlists.html", rows=playlists.all_playlists(), error=f"Could not read the CSV: {exc}")
+    existing = playlists.find_by_name(name)
+    if existing is not None:
+        # Same name as a playlist already here: Update it (keep every decision, add and remove rows) or make a new one.
+        token = secrets.token_urlsafe(12)
+        cache_put(f"playlist-upload:{token}", {"name": name, "text": text})
+        return render(request, "playlists.html", rows=playlists.all_playlists(),
+                      pending={"token": token, "name": name, "existing": existing, "rows": len(playlists.parse_csv(text))})
+    playlist = playlists.create_playlist(name, text)
+    return RedirectResponse(f"/playlists/{playlist.id}", status_code=303)
+
+
+@router.post("/playlists/pending/{token}")
+async def playlist_pending(request: Request, token: str):
+    form = await request.form()
+    pending = cache_get(f"playlist-upload:{token}", timedelta(hours=2))
+    if not pending:
+        return render(request, "playlists.html", rows=playlists.all_playlists(), error="That upload has expired; upload the CSV again")
+    if form.get("action") == "update":
+        existing = playlists.find_by_name(pending["name"])
+        if existing is None:
+            raise HTTPException(404, "the playlist to update is gone")
+        result = playlists.update_playlist(existing.id, pending["text"])
+        return RedirectResponse(f"/playlists/{existing.id}?{urlencode(result)}", status_code=303)
+    playlist = playlists.create_playlist(pending["name"], pending["text"])
     return RedirectResponse(f"/playlists/{playlist.id}", status_code=303)
 
 

@@ -12,6 +12,18 @@
     <button type="submit" class="primary">Upload</button>
   </form>
   {% if error %}<p class="banner error">{{ error }}</p>{% endif %}
+  {% if pending %}
+  <div class="banner warn">
+    <p><strong>A playlist named “{{ pending.name }}” is already here</strong> (<a href="/playlists/{{ pending.existing.id }}">{{ pending.existing.state }}</a>). The new file has {{ pending.rows }} rows.</p>
+    <form method="post" action="/playlists/pending/{{ pending.token }}" class="inline-form">
+      <button name="action" value="update" class="primary">Update it</button>
+      <span class="small muted">rows you already decided keep their choices; new rows are added and resolved; rows that left the file are removed from the playlist (files stay).</span>
+    </form>
+    <form method="post" action="/playlists/pending/{{ pending.token }}" class="inline-form">
+      <button name="action" value="new">Make a new playlist</button>
+    </form>
+  </div>
+  {% endif %}
 </section>
 
 <section>

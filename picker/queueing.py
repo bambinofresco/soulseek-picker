@@ -127,8 +127,8 @@ async def start_run(playlist_id: int, settings: Settings | None = None) -> int:
         return 0
     created = 0
     for group in data.groups:
-        if group.mode == "skip":
-            continue
+        if group.mode == "skip" or group.choice.queue_item_id:
+            continue  # skipped, or already part of this run (an Update added new albums; the old ones keep their items)
         wanted = [t.recording_mbid for t in group.tracks if not t.owned_path and t.recording_mbid]
         mode, owned = group.mode, group.owned.to_dict() if group.owned else None
         if mode == "tracks_plus":

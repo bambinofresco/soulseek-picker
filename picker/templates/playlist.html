@@ -8,8 +8,19 @@
 </div>
 {% if r.playlist.error %}<p class="banner error">{{ r.playlist.error }}</p>{% endif %}
 
+{% if request.query_params.get("kept") is not none %}
+<p class="banner ok">Updated from the new file: {{ request.query_params.get("kept") }} rows kept, {{ request.query_params.get("added") }} added, {{ request.query_params.get("removed") }} removed.</p>
+{% endif %}
 {% if r.playlist.state in ("running", "paused", "done") %}
 <div hx-get="/playlists/{{ r.playlist.id }}/run" hx-trigger="load" hx-swap="outerHTML"><p class="muted">Loading the run…</p></div>
+{% if r.new_groups %}
+<section class="card start-run">
+  <form method="post" action="/playlists/{{ r.playlist.id }}/run/start" onsubmit="return confirm('Queue the new albums? The recommended folder is downloaded for each when its match is strong enough.')">
+    <button type="submit" class="primary" {% if r.resolving %}disabled title="Rows are still being resolved"{% endif %}>Start run for {{ r.new_groups|length }} new album{{ "s" if r.new_groups|length != 1 }}</button>
+    <span class="small muted">Albums the run already handled keep their state; only these are added.</span>
+  </form>
+</section>
+{% endif %}
 <section class="card sync">
   <div class="toolbar">
     <h2>The playlist</h2>
