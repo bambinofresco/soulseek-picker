@@ -89,6 +89,8 @@ def env(settings, monkeypatch):
     async def fake_editions(rg):
         return [{"id": REL, "title": "OK Computer", "date": "1997-07-01", "country": "US",
                  "label-info": [{"label": {"name": "Capitol Records"}, "catalog-number": "CDP 7243 8 55229 2 5"}],
+                 "media": [{"position": 1, "format": "CD", "tracks": [{"length": 1}] * 3}]},
+                {"id": OTHER, "title": "OK Computer", "date": "2009-03-24", "country": "GB", "disambiguation": "remastered",
                  "media": [{"position": 1, "format": "CD", "tracks": [{"length": 1}] * 3}]}]
 
     monkeypatch.setattr(albums, "editions", fake_editions)
@@ -315,6 +317,56 @@ async def test_auto_import_waits_for_review_when_a_check_does_not_pass(env, monk
         from picker.models import JobEvent
         events = [e.message for e in s.exec(select(JobEvent)).all()]
     assert any(reason in e for e in events), events
+
+
+def _tag_files(dl: Download, settings, **tags) -> None:
+    from picker.downloading import landed_dir
+
+    for path in importing.source_root(landed_dir(dl, settings)).glob("*.flac"):
+        f = FLAC(path)
+        f.update({k.upper(): v for k, v in tags.items()})
+        f.save()
+
+
+async def test_files_tagged_as_another_edition_wait_for_review_and_can_switch_to_it(env, monkeypatch):
+    settings, lidarr, _ = env
+    settings.auto_import = True
+    _spectrum(monkeypatch, "full")
+    dl = landed_download(settings, job_id=14)
+    _tag_files(dl, settings, musicbrainz_albumid=OTHER, date="2009")
+    imp = await run(importing.start_import(dl))
+    assert imp.state == "review" and imp.tag_check["kind"] == "different" and imp.tag_check["tagged_mbid"] == OTHER
+    assert "dated 2009, not 1997" in imp.tag_check["detail"] and "a remaster" in imp.tag_check["detail"]
+    assert importing.review_reason(imp, settings) == "the files are tagged as a different edition"
+
+    # "Use that edition instead": the checks run again against it and the import goes straight in.
+    imp = await run(importing.change_edition(imp, OTHER))
+    assert imp.state == "imported" and imp.release_mbid == OTHER and imp.tag_check["kind"] == "same"
+    assert lidarr.updated is None  # Lidarr already had OTHER monitored: nothing to change
+    with session() as s:
+        assert s.get(Download, dl.id).release_mbid == OTHER
+
+
+async def test_plain_tags_that_fit_do_not_hold(env, monkeypatch):
+    settings, *_ = env
+    settings.auto_import = True
+    _spectrum(monkeypatch, "full")
+    dl = landed_download(settings, job_id=15)
+    _tag_files(dl, settings, album="OK Computer", date="1997")
+    imp = await run(importing.start_import(dl))
+    assert imp.state == "imported" and imp.tag_check["kind"] == "agree"
+
+
+async def test_remaster_in_the_album_tag_holds_and_import_overrides(env, monkeypatch):
+    settings, *_ = env
+    settings.auto_import = True
+    _spectrum(monkeypatch, "full")
+    dl = landed_download(settings, job_id=16)
+    _tag_files(dl, settings, album="OK Computer (Remastered)")
+    imp = await run(importing.start_import(dl))
+    assert imp.state == "review" and imp.tag_check["kind"] == "different" and imp.tag_check["tagged_mbid"] is None
+    imp = await run(importing.approve(imp))
+    assert imp.state == "imported" and imp.release_mbid == REL
 
 
 def test_names_and_paths(settings):

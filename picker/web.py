@@ -496,6 +496,7 @@ async def import_page(request: Request, import_id: int, error: str | None = None
     return render(
         request, "import.html", imp=imp, album=album, dl=dl, edition=by_id.get(imp.release_mbid),
         hold=importing.review_reason(imp, get_settings()),
+        tagged=by_id.get((imp.tag_check or {}).get("tagged_mbid") or ""),
         editions=[e for e in editions if e.id in likely] + [e for e in editions if e.id not in likely],
         likely=set(likely), error=error, active=imp.state in ("verifying", "refetching", "importing"),
     )

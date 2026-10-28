@@ -52,6 +52,8 @@ ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 # catalog number, year) are about to be overwritten and must not count against the match.
 # Seen in practice: Neon Nights files tagged for the AU pressing scored 82.7% against the
 # identical GB release, every track length equal, and beets skipped it.
+# The picker compares those tags with the chosen edition itself (tagcheck.py) and holds a
+# folder tagged as a different edition for review, so nothing is lost by ignoring them here.
 PINNED_WEIGHTS = """\
 match:
   distance_weights:

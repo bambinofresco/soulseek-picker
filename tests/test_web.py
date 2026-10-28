@@ -212,6 +212,40 @@ def test_import_review_page(client, with_editions, state, expect):
     assert client.get(f"/imports/{imp.id}/spectrogram/..%2F..%2Fpicker.db").status_code == 404
 
 
+@pytest.mark.parametrize("check, expect, absent", [
+    ({"kind": "different", "detail": "the files are tagged as another edition of this album: dated 1997, not 1997",
+      "tagged_mbid": "uk-cd", "in_group": True, "tags": {"musicbrainz_albumid": "uk-cd"}},
+     ["The uploader's tags say otherwise", "1997-05-21 · GB · CD", 'value="uk-cd"', "Use that edition instead",
+      "musicbrainz_albumid=uk-cd", "Waiting for you because the files are tagged as a different edition"], []),
+    ({"kind": "different", "detail": "the files are tagged as a release that is not an edition of this album",
+      "tagged_mbid": "0f1e2d3c-0000-0000-0000-000000000000", "in_group": False, "tags": {}},
+     ["not an edition of this album", "Reject if the folder is not this album"], ["Use that edition instead"]),
+    ({"kind": "sibling", "detail": "sister", "tagged_mbid": "uk-cd", "in_group": True, "tags": {}},
+     ["a sister pressing of this edition", "1997-05-21 · GB · CD"], ["Use that edition instead", "say otherwise"]),
+    ({"kind": "same", "detail": "same", "tagged_mbid": "jp-cd", "in_group": True, "tags": {}},
+     ["already carry this edition"], ["say otherwise"]),
+    ({"kind": "untagged", "detail": "nothing", "tagged_mbid": None, "in_group": False, "tags": {}},
+     [], ["say otherwise", "sister pressing", "already carry"]),
+])
+def test_review_page_shows_the_tag_check(client, with_editions, settings, check, expect, absent):
+    from picker.models import Import
+    seed()
+    settings.auto_import, settings.transcode_check = True, False
+    with session() as s:
+        imp = Import(rg_mbid="rg-1", release_mbid="jp-cd", username="alice", state="review", step="review",
+                     source_dir="/dl/picker/1", tag_check=check)
+        s.add(imp)
+        s.commit()
+        s.refresh(imp)
+    html = client.get(f"/imports/{imp.id}").text
+    for text in expect:
+        assert text in html, text
+    for text in absent:
+        assert text not in html, text
+    history = client.get("/history").text
+    assert ("tags differ" in history) == (check["kind"] == "different")
+
+
 def test_missing_columns_are_added(tmp_path):
     db = tmp_path / "old.db"
     con = sqlite3.connect(db)

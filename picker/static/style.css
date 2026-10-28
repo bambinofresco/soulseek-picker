@@ -101,6 +101,8 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .banner.ok { background: var(--ok-bg); color: var(--ok); }
 .banner.warn { background: var(--warn-bg); color: var(--warn); }
 .banner.error { background: var(--error-bg); color: var(--error); }
+.banner.tag-check p { margin: 0 0 6px; }
+.banner.tag-check form { margin-top: 6px; }
 
 .badge {
   display: inline-block;

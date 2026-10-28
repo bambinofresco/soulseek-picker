@@ -123,7 +123,15 @@ The one interaction: slskd refuses to enqueue a file that's already in flight fr
 - the spectrum check, which must find no sign of a transcode or upsampling, and must actually have run
 - an edition was chosen
 
+- the uploader's tags don't name a different edition (see below)
+
 Anything else waits on the Review page, and the album's event log says why ("waiting for review (the spectrum check suggests a transcode)"). Turn `auto_import` off to review every download.
+
+**Tag check.** Before anything is placed or tagged, the picker reads the tags the uploader left in the files and compares them with the edition you chose when you downloaded. beets is told to ignore those tags (see the overlays under beets), so this is the only place a folder tagged as another edition gets noticed:
+- **Same release**: the files already carry the chosen edition's MusicBrainz ID. Nothing to do.
+- **Sister pressing**: they carry another release of the same album with the same year and kind (country, label or catalog number differ). A note on the Review page; the import goes ahead.
+- **Different edition**: they name a remaster, reissue, another year, an edition with different words in its name, or a release outside this album; or there is no MusicBrainz ID but the album or comment tag says "remaster" when the chosen edition isn't one, or the date tag is another year. The import waits for review. The Review page shows what the tags say and offers **Use that edition instead** (one click: the checks run again and the import continues by itself), or press **Import** to tag the files as the edition you chose anyway.
+- **No MusicBrainz ID** and nothing that disagrees: the import goes ahead.
 
 ## Downloads: queue and stall timeouts
 

@@ -26,6 +26,28 @@
   {% else %}
     <p class="banner warn">No edition was chosen for this download. Pick one below.</p>
   {% endif %}
+  {% set check = imp.tag_check or {} %}
+  {% if check.kind == "different" %}
+    <div class="banner warn tag-check">
+      <p><strong>The uploader's tags say otherwise:</strong> {{ check.detail }}.
+        {% if tagged %}They name <a href="https://musicbrainz.org/release/{{ tagged.id }}" target="_blank" rel="noopener">{{ tagged|edition }}</a>.
+        {% elif check.tagged_mbid %}They name <a class="mono" href="https://musicbrainz.org/release/{{ check.tagged_mbid }}" target="_blank" rel="noopener">{{ check.tagged_mbid[:8] }}</a>, which is not an edition of this album.{% endif %}</p>
+      {% if check.tags %}<p class="small mono muted">{% for k, v in check.tags.items() %}{{ k }}={{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+      {% if tagged and imp.state == "review" %}
+      <form method="post" action="/imports/{{ imp.id }}/edition" class="inline-form">
+        <input type="hidden" name="release_mbid" value="{{ tagged.id }}">
+        <button type="submit">Use that edition instead</button>
+        <span class="small muted">or press Import to tag the files as the edition you chose.</span>
+      </form>
+      {% elif imp.state == "review" %}
+      <p class="small muted">Press Import to tag the files as the edition you chose, or Reject if the folder is not this album.</p>
+      {% endif %}
+    </div>
+  {% elif check.kind == "sibling" %}
+    <p class="small muted">The uploader tagged the files as {% if tagged %}<a href="https://musicbrainz.org/release/{{ tagged.id }}" target="_blank" rel="noopener">{{ tagged|edition }}</a>{% else %}another pressing{% endif %}, a sister pressing of this edition (same year and kind). beets retags them.</p>
+  {% elif check.kind == "same" %}
+    <p class="small muted">The files already carry this edition's MusicBrainz ID.</p>
+  {% endif %}
   {% if imp.state in ("review", "skipped", "blocked", "failed") and editions %}
   <details class="change-edition" {% if not imp.release_mbid %}open{% endif %}>
     <summary class="small">{% if imp.release_mbid %}Change…{% else %}Choose the edition{% endif %}</summary>

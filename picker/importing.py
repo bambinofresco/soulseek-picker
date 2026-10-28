@@ -3,6 +3,7 @@
 Steps, each recorded on the Import row so a restart resumes where it stopped:
 
     verify   file count, flac -t, mutagen; spectrograms for review
+    tags     the uploader's tags against the chosen edition (a different edition holds for review)
     review   wait for Import / Change edition / Reject (skipped when auto_import is on and every check passed)
     artist   make sure Lidarr has the artist; read its folder
     place    move the download to <artist folder>/<album folder>; never overwrite
@@ -25,7 +26,7 @@ from pathlib import Path
 
 from sqlmodel import select
 
-from . import albums, audio, beets
+from . import albums, audio, beets, tagcheck
 from .clients import services
 from .clients.http import ServiceError
 from .config import Settings, get_settings
@@ -235,6 +236,8 @@ def refetch_failed(import_id: int, message: str) -> None:
 
 
 def change_edition(imp: Import, release_mbid: str) -> Import:
+    """Pick another edition. Under review, the checks run again against it, so an import
+    that now passes every check (auto_import on) goes straight in."""
     if imp.state not in ("review", "skipped", "blocked", "failed"):
         raise Blocked(f"cannot change the edition while the import is {imp.state}")
     with session() as s:
@@ -242,7 +245,10 @@ def change_edition(imp: Import, release_mbid: str) -> Import:
             dl.release_mbid = release_mbid
             s.add(dl)
             s.commit()
-    return _save(imp, release_mbid=release_mbid, force=False)
+    imp = _save(imp, release_mbid=release_mbid, force=False)
+    if imp.state == "review":
+        return enqueue(_save(imp, step="tags", state="verifying", error=None))
+    return imp
 
 
 # The job ---------------------------------------------------------------------------------
@@ -283,6 +289,8 @@ def review_reason(imp: Import, settings: Settings) -> str | None:
         failed = [f for f in (imp.transcode or {}).get("files", []) if str(f.get("detail", "")).startswith("could not analyse")]
         if kind is None or failed:
             return "the spectrum check could not run"
+    if (imp.tag_check or {}).get("kind") == "different":
+        return "the files are tagged as a different edition"
     return None
 
 
@@ -290,6 +298,9 @@ async def _pipeline(imp: Import) -> None:
     settings = get_settings()
     if imp.step == "verify":
         await _verify(imp, settings)
+        _save(imp, step="tags")
+    if imp.step == "tags":
+        await _check_tags(imp)
         hold = review_reason(imp, settings)
         if hold:
             _save(imp, step="review", state="review")
@@ -353,6 +364,24 @@ async def _verify(imp: Import, settings: Settings) -> None:
         _save(imp, transcode=transcode)
         if transcode["album"]["kind"] in ("lossy", "upsampled"):
             log_event(imp.job_id, imp.rg_mbid, f"Possible transcode: {transcode['album']['detail']}")
+
+
+async def _check_tags(imp: Import) -> None:
+    """What the uploader's tags say the files are, against the edition chosen at download.
+
+    beets is told to ignore those tags (see beets.py), so this is where a folder tagged
+    as another edition gets noticed. Only a different edition holds the import.
+    """
+    try:
+        editions = await albums.album_editions(imp.rg_mbid)
+    except ServiceError as exc:
+        check = tagcheck.TagCheck("unreadable", f"could not load the album's editions: {exc.message}", tags={})
+    else:
+        chosen = next((e for e in editions if e.id == imp.release_mbid), None)
+        check = tagcheck.check_folder(audio.audio_files(Path(imp.source_dir or "")), chosen, editions)
+    _save(imp, tag_check=check.to_dict())
+    if check.kind == "different":
+        log_event(imp.job_id, imp.rg_mbid, f"Tag check: {check.detail}")
 
 
 async def _artist_dir(imp: Import, album: Album, settings: Settings) -> Path:

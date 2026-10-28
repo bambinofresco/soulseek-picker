@@ -17,6 +17,7 @@
     <td class="mono small">{{ i.album_dir or i.source_dir or "" }}</td>
     <td><span class="state state-{{ i.state }}">{{ i.state }}</span>
       {%- if i.transcode and i.transcode.album.kind in ("lossy", "upsampled") %} <span class="badge warn" title="{{ i.transcode.album.detail }}">{{ "transcode?" if i.transcode.album.kind == "lossy" else "upsampled?" }}</span>{% endif %}
+      {%- if i.tag_check and i.tag_check.kind == "different" %} <span class="badge warn" title="{{ i.tag_check.detail }}">tags differ</span>{% endif %}
       {%- if i.notes %} <span class="badge warn" title="{{ i.notes|join('\n') }}">{{ i.notes|length }} note{{ "s" if i.notes|length > 1 }}</span>{% endif %}</td>
     <td>
       {% if i.tags %}{% set imp = i %}<details><summary class="small">tags</summary>{% include "_tags.html" %}</details>{% endif %}
