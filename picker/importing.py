@@ -289,8 +289,11 @@ def review_reason(imp: Import, settings: Settings) -> str | None:
         failed = [f for f in (imp.transcode or {}).get("files", []) if str(f.get("detail", "")).startswith("could not analyse")]
         if kind is None or failed:
             return "the spectrum check could not run"
-    if (imp.tag_check or {}).get("kind") == "different":
+    kind = (imp.tag_check or {}).get("kind")
+    if kind == "different":
         return "the files are tagged as a different edition"
+    if kind == "mixed":
+        return "the files are tagged as several different releases"
     return None
 
 
@@ -360,7 +363,7 @@ async def _verify(imp: Import, settings: Settings) -> None:
         _note(imp, f"No spectrogram: {error}")
     if settings.transcode_check:
         # A warning for the Review page, never a reject: some masterings are band-limited.
-        transcode = await audio.transcode_check(results, picks, settings.cutoff_db)
+        transcode = await audio.transcode_check(results, audio.audio_files(root), settings.cutoff_db)
         _save(imp, transcode=transcode)
         if transcode["album"]["kind"] in ("lossy", "upsampled"):
             log_event(imp.job_id, imp.rg_mbid, f"Possible transcode: {transcode['album']['detail']}")
@@ -380,7 +383,7 @@ async def _check_tags(imp: Import) -> None:
         chosen = next((e for e in editions if e.id == imp.release_mbid), None)
         check = tagcheck.check_folder(audio.audio_files(Path(imp.source_dir or "")), chosen, editions)
     _save(imp, tag_check=check.to_dict())
-    if check.kind == "different":
+    if check.kind in ("different", "mixed"):
         log_event(imp.job_id, imp.rg_mbid, f"Tag check: {check.detail}")
 
 

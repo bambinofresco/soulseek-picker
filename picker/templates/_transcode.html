@@ -9,7 +9,7 @@
     <p class="banner warn"><strong>Possibly upsampled.</strong> {{ album.detail }}.</p>
   {% elif album.kind == "full" %}
     <p class="small"><span class="badge ok">full-range spectrum</span>
-      <span class="muted">no lossy low-pass found in the {{ tc.files|length }} track{{ "s" if tc.files|length != 1 }} checked</span></p>
+      <span class="muted">no lossy low-pass found in any of the {{ tc.files|length }} track{{ "s" if tc.files|length != 1 }}</span></p>
   {% else %}
     <p class="small muted">Spectrum check: {{ album.detail }}.</p>
   {% endif %}

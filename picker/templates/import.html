@@ -43,6 +43,15 @@
       <p class="small muted">Press Import to tag the files as the edition you chose, or Reject if the folder is not this album.</p>
       {% endif %}
     </div>
+  {% elif check.kind == "mixed" %}
+    <div class="banner warn tag-check">
+      <p><strong>The files come from more than one rip:</strong> {{ check.detail }}.</p>
+      <ul class="small">
+        {% for part in check.split %}<li>{{ part.count }} track{{ "s" if part.count != 1 }} tagged
+          {% if by_id.get(part.mbid) %}<a href="https://musicbrainz.org/release/{{ part.mbid }}" target="_blank" rel="noopener">{{ by_id[part.mbid]|edition }}</a>{% else %}<a class="mono" href="https://musicbrainz.org/release/{{ part.mbid }}" target="_blank" rel="noopener">{{ part.mbid[:8] }}</a> (not an edition of this album){% endif %}</li>{% endfor %}
+      </ul>
+      {% if imp.state == "review" %}<p class="small muted">Press Import to tag every file as the edition you chose, or Reject if you would rather have a single rip.</p>{% endif %}
+    </div>
   {% elif check.kind == "sibling" %}
     <p class="small muted">The uploader tagged the files as {% if tagged %}<a href="https://musicbrainz.org/release/{{ tagged.id }}" target="_blank" rel="noopener">{{ tagged|edition }}</a>{% else %}another pressing{% endif %}, a sister pressing of this edition (same year and kind). beets retags them.</p>
   {% elif check.kind == "same" %}

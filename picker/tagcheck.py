@@ -9,12 +9,14 @@ This check reads those tags before anything is placed or tagged and sorts them i
                kind of edition: a sister pressing (country, label, catalog number differ)
     different  they name another edition (remaster, reissue, another year) or a release
                outside this album, or say "remaster" when the chosen edition isn't one
+    mixed      the files name more than one release between them: a folder assembled from
+               several rips
     agree      no MusicBrainz ID, but the year or remaster words that are there fit
     untagged   nothing to compare
     unreadable the tags could not be read
 
-Only `different` holds an import for review; the Review page offers the tagged edition
-with one click, and Import tags the files as chosen regardless.
+`different` and `mixed` hold an import for review; the Review page offers the tagged
+edition with one click, and Import tags the files as chosen regardless.
 """
 
 from __future__ import annotations
@@ -42,6 +44,7 @@ class TagCheck:
     tagged_mbid: str | None = None  # the release the files name, when they name one
     in_group: bool = False  # ... and it is an edition of this album
     tags: dict | None = None  # what was read: tag -> value (the most common across the files)
+    split: list[dict] | None = None  # mixed: [{"mbid", "count"}, ...], most files first
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -62,8 +65,9 @@ def _easy_tags(path: Path) -> dict:
     return found
 
 
-def read_tags(files: list[Path]) -> tuple[dict, list[str]]:
-    """The most common value of each tag across the files, and the files that could not be read."""
+def read_tags(files: list[Path]) -> tuple[dict, list[str], Counter]:
+    """The most common value of each tag across the files, the files that could not be read,
+    and how many files carry each release ID."""
     counts: dict[str, Counter] = {key: Counter() for key in TAG_KEYS}
     errors = []
     for path in files:
@@ -74,7 +78,7 @@ def read_tags(files: list[Path]) -> tuple[dict, list[str]]:
             continue
         for key, value in tags.items():
             counts[key][value] += 1
-    return {key: c.most_common(1)[0][0] for key, c in counts.items() if c}, errors
+    return {key: c.most_common(1)[0][0] for key, c in counts.items() if c}, errors, counts["musicbrainz_albumid"]
 
 
 def _year(text: str | None) -> int | None:
@@ -123,7 +127,13 @@ def compare(tags: dict, chosen: Edition | None, editions: list[Edition]) -> TagC
 
 
 def check_folder(files: list[Path], chosen: Edition | None, editions: list[Edition]) -> TagCheck:
-    tags, errors = read_tags(files)
+    tags, errors, ids = read_tags(files)
     if not tags and errors:
         return TagCheck("unreadable", "could not read the tags: " + errors[0], tags={})
+    releases = [(mbid, n) for mbid, n in ids.most_common() if UUID_RE.match(mbid)]
+    if len(releases) > 1:
+        split = [{"mbid": mbid.lower(), "count": n} for mbid, n in releases]
+        return TagCheck("mixed", f"the files name {len(releases)} different releases between them "
+                                 f"({', '.join(f'{n} tagged {mbid[:8]}' for mbid, n in releases)}): "
+                                 "a folder put together from several rips", tags=tags, split=split)
     return compare(tags, chosen, editions)

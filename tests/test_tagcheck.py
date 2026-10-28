@@ -82,11 +82,20 @@ def test_read_tags_takes_the_most_common_value_and_reports_unreadable_files(tmp_
         files.append(path)
     bad = tmp_path / "04.flac"
     bad.write_bytes(b"not a flac")
-    tags, errors = read_tags(files + [bad])
+    tags, errors, ids = read_tags(files + [bad])
     assert tags["musicbrainz_albumid"] == REMASTER.id and tags["date"] == "2009" and tags["album"] == "OK Computer"
     assert errors and errors[0].startswith("04.flac")
+    assert ids == {REMASTER.id: 2, ORIGINAL.id: 1}
 
+    # Two releases between the files: a folder assembled from several rips.
     check = check_folder(files, ORIGINAL, EDITIONS)
-    assert check.kind == "different" and check.tagged_mbid == REMASTER.id
+    assert check.kind == "mixed" and check.split == [{"mbid": REMASTER.id, "count": 2}, {"mbid": ORIGINAL.id, "count": 1}]
+    assert "2 different releases" in check.detail and "2 tagged 33333333" in check.detail
+
+    f = FLAC(files[2])
+    f["MUSICBRAINZ_ALBUMID"] = REMASTER.id
+    f.save()
+    check = check_folder(files, ORIGINAL, EDITIONS)
+    assert check.kind == "different" and check.tagged_mbid == REMASTER.id and check.split is None
     assert check_folder([bad], ORIGINAL, EDITIONS).kind == "unreadable"
     assert TagCheck("same", "x").to_dict()["kind"] == "same"

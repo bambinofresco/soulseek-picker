@@ -548,7 +548,8 @@ async def test_possible_transcode_is_reported_but_never_blocks(env, monkeypatch)
     imp = await run(importing.start_import(landed_download(settings, job_id=40)))
     assert imp.state == "review"  # a warning, not a reject
     assert imp.transcode["album"]["kind"] == "lossy" and imp.transcode["album"]["cutoff_hz"] == 16000
-    assert len(imp.transcode["files"]) == 2  # the two spectrogram tracks
+    assert len(imp.transcode["files"]) == 3  # every track, not just the spectrogram ones
+    assert imp.transcode["album"]["detail"].endswith("(1 of 3 tracks)")
 
 
 async def test_failed_analysis_is_unknown_and_the_import_continues(env, monkeypatch):

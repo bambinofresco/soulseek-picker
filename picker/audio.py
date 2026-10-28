@@ -69,24 +69,36 @@ async def verify(root: Path, expected_count: int) -> tuple[bool, list[dict], str
     return True, results, None
 
 
-async def transcode_check(results: list[dict], picks: list[Path], cutoff_db: float) -> dict:
-    """Spectrum verdict for the picked tracks (the spectrogram ones) and for the album.
+DECODERS = 3  # ffmpeg decodes running at once for the spectrum check
 
+
+async def transcode_check(results: list[dict], files: list[Path], cutoff_db: float) -> dict:
+    """Spectrum verdict for every track and for the album.
+
+    Every file is checked: a folder "fixed" with one lossy track would slip past a sample.
     Never raises: a missing ffmpeg or an odd file becomes an "unknown" verdict with the reason.
     """
     from . import spectrum  # numpy is only needed here
 
     info = {r["name"]: r for r in results}
-    files = []
-    for path in picks:
+    gate = asyncio.Semaphore(DECODERS)
+
+    async def one(path: Path) -> dict:
         r = info.get(path.name, {})
-        try:
-            v = await spectrum.analyse_file(str(path), int(r.get("rate") or 44100), float(r.get("length") or 0), cutoff_db)
-        except Exception as exc:  # noqa: BLE001 - a failed analysis must not stop the import
-            v = spectrum.Verdict("unknown", None, None, f"could not analyse: {exc}")
-        files.append({"name": path.name, **v.to_dict()})
-    album = spectrum.combine([spectrum.Verdict(f["kind"], f["cutoff_hz"], f["drop_db"], f["detail"]) for f in files])
-    return {"album": album.to_dict(), "files": files}
+        async with gate:
+            try:
+                v = await spectrum.analyse_file(str(path), int(r.get("rate") or 44100), float(r.get("length") or 0), cutoff_db)
+            except Exception as exc:  # noqa: BLE001 - a failed analysis must not stop the import
+                v = spectrum.Verdict("unknown", None, None, f"could not analyse: {exc}")
+        return {"name": path.name, **v.to_dict()}
+
+    verdicts = list(await asyncio.gather(*(one(p) for p in files)))
+    album = spectrum.combine([spectrum.Verdict(f["kind"], f["cutoff_hz"], f["drop_db"], f["detail"]) for f in verdicts])
+    flagged = [f["name"] for f in verdicts if f["kind"] == album.kind] if album.kind in ("lossy", "upsampled") else []
+    album_dict = album.to_dict()
+    if flagged:
+        album_dict["detail"] += f" ({len(flagged)} of {len(verdicts)} tracks)"
+    return {"album": album_dict, "files": verdicts}
 
 
 EDITION_TAGS = [

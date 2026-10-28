@@ -131,6 +131,7 @@ Anything else waits on the Review page, and the album's event log says why ("wai
 - **Same release**: the files already carry the chosen edition's MusicBrainz ID. Nothing to do.
 - **Sister pressing**: they carry another release of the same album with the same year and kind (country, label or catalog number differ). A note on the Review page; the import goes ahead.
 - **Different edition**: they name a remaster, reissue, another year, an edition with different words in its name, or a release outside this album; or there is no MusicBrainz ID but the album or comment tag says "remaster" when the chosen edition isn't one, or the date tag is another year. The import waits for review. The Review page shows what the tags say and offers **Use that edition instead** (one click: the checks run again and the import continues by itself), or press **Import** to tag the files as the edition you chose anyway.
+- **Mixed**: the files name more than one release between them, which means the folder was put together from several rips. The import waits for review and the Review page lists how many tracks carry each release.
 - **No MusicBrainz ID** and nothing that disagrees: the import goes ahead.
 
 ## Downloads: queue and stall timeouts
@@ -141,7 +142,7 @@ Anything else waits on the Review page, and the album's event log says why ("wai
 
 **Transcode check.** A FLAC made from an MP3 or AAC decodes perfectly, so `flac -t` can't catch it. Lossy encoders cut everything above a low-pass frequency (around 16 kHz at 128 kbps, 19 kHz at 192, about 20 kHz at 256–320), and that shows up as a cliff in the spectrum, whereas real recordings fade out gradually.
 
-Before Review, the picker analyses the two tracks it draws spectrograms for. It decodes three 10-second stretches of each with ffmpeg and checks where the spectrum ends:
+Before Review, the picker analyses every track (three ffmpeg decodes at a time). It decodes three 10-second stretches of each and checks where the spectrum ends:
 - **Possible transcode**: a cliff, reported with its frequency and what bitrate it's consistent with.
 - **Possibly upsampled**: a 96 kHz file with nothing above about 22 kHz.
 - **Full-range**: no cliff.

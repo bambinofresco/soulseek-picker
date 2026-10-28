@@ -220,6 +220,10 @@ def test_import_review_page(client, with_editions, state, expect):
     ({"kind": "different", "detail": "the files are tagged as a release that is not an edition of this album",
       "tagged_mbid": "0f1e2d3c-0000-0000-0000-000000000000", "in_group": False, "tags": {}},
      ["not an edition of this album", "Reject if the folder is not this album"], ["Use that edition instead"]),
+    ({"kind": "mixed", "detail": "the files name 2 different releases between them", "tagged_mbid": None, "in_group": False,
+      "tags": {}, "split": [{"mbid": "uk-cd", "count": 7}, {"mbid": "0f1e2d3c-0000-0000-0000-000000000000", "count": 3}]},
+     ["more than one rip", "7 tracks tagged", "1997-05-21 · GB · CD", "3 tracks tagged", "not an edition of this album",
+      "Waiting for you because the files are tagged as several different releases"], ["Use that edition instead"]),
     ({"kind": "sibling", "detail": "sister", "tagged_mbid": "uk-cd", "in_group": True, "tags": {}},
      ["a sister pressing of this edition", "1997-05-21 · GB · CD"], ["Use that edition instead", "say otherwise"]),
     ({"kind": "same", "detail": "same", "tagged_mbid": "jp-cd", "in_group": True, "tags": {}},
@@ -244,6 +248,7 @@ def test_review_page_shows_the_tag_check(client, with_editions, settings, check,
         assert text not in html, text
     history = client.get("/history").text
     assert ("tags differ" in history) == (check["kind"] == "different")
+    assert ("mixed rips" in history) == (check["kind"] == "mixed")
 
 
 def test_missing_columns_are_added(tmp_path):
