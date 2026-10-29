@@ -31,7 +31,7 @@ from .config import Settings, get_settings
 from .db import session
 from .jobs import handler, log_event, worker
 from .models import Album, Job, Playlist, PlaylistAlbum, PlaylistTrack
-from .queries import normalize
+from .queries import _BRACKETED, normalize
 
 log = logging.getLogger(__name__)
 
@@ -328,9 +328,16 @@ _EDITION_SUFFIX = re.compile(
     re.IGNORECASE)
 
 
+def plain_album_title(text: str) -> str:
+    """The album name without its edition suffix, bracketed ("(Remastered 1999/Rudy Van Gelder
+    Edition)") or dashed ("- Deluxe Edition"); the name itself when nothing else is left."""
+    stripped = _BRACKETED.sub(" ", _EDITION_SUFFIX.sub("", text or "")).strip()
+    return stripped or (text or "").strip()
+
+
 def album_key(text: str) -> str:
     """The album name as a comparison key: edition suffixes and brackets gone, normalized."""
-    return normalize(_EDITION_SUFFIX.sub("", text or ""))
+    return normalize(plain_album_title(text))
 
 
 def needs_named_album(track: PlaylistTrack, options: list[AlbumOption]) -> bool:
@@ -357,7 +364,7 @@ def option_from_release_group(group: dict) -> AlbumOption:
 async def find_named_album(track: PlaylistTrack, mb) -> AlbumOption | None:
     """The studio album or EP the CSV names, by the track's artist, from a release-group search."""
     artist = first_artist(track.artist)
-    title = _EDITION_SUFFIX.sub("", track.album or "").strip()
+    title = plain_album_title(track.album)
     groups = await mb.search_release_groups(artist, title)
     key, want_artist = album_key(title), normalize(artist)
     found = [o for o in (option_from_release_group(g) for g in groups if g.get("id"))

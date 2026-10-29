@@ -414,6 +414,10 @@ async def test_a_crashed_resolve_leaves_the_playlist_in_review_with_an_error(set
 
 def test_album_key_drops_edition_suffixes():
     assert playlists.album_key("Maiden Voyage - Remastered 1999/Rudy Van Gelder Edition") == "maiden voyage"
+    assert playlists.plain_album_title("Maiden Voyage (Remastered 1999/Rudy Van Gelder Edition)") == "Maiden Voyage"
+    assert playlists.plain_album_title("Maiden Voyage - Remastered 1999/Rudy Van Gelder Edition") == "Maiden Voyage"
+    assert playlists.plain_album_title("(What's the Story) Morning Glory?") == "Morning Glory?"
+    assert playlists.plain_album_title("(Untitled)") == "(Untitled)"  # nothing left: search the name as it is
     assert playlists.album_key("Nevermind (Remastered)") == "nevermind"
     assert playlists.album_key("Abbey Road (Super Deluxe Edition)") == "abbey road"
     assert playlists.album_key("Takin' Off / Maiden Voyage") == "takin off maiden voyage"
@@ -421,7 +425,7 @@ def test_album_key_drops_edition_suffixes():
 
 
 async def test_a_recording_only_on_compilations_finds_the_named_studio_album(settings, mb):
-    text = CSV + "spotify:track:7,Maiden Voyage - Remastered 1999/Rudy Van Gelder Edition,Maiden Voyage - Remastered 1999/Rudy Van Gelder Edition,Herbie Hancock,1999-01-01,474000,USBN20400123,Herbie Hancock\n"
+    text = CSV + "spotify:track:7,Maiden Voyage - Remastered 1999/Rudy Van Gelder Edition,Maiden Voyage (Remastered 1999/Rudy Van Gelder Edition),Herbie Hancock,1999-01-01,474000,USBN20400123,Herbie Hancock\n"
     playlist = await resolved_playlist(settings, mb, text=text)
     assert mb.group_calls == [("Herbie Hancock", "Maiden Voyage")]  # one lookup, for the one row that needed it
     voyage = [t for t in tracks_of(playlist.id) if t.title.startswith("Maiden")][0]
