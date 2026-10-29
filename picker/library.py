@@ -347,23 +347,53 @@ def name_index() -> dict[str, list[LibraryFile]]:
     return index
 
 
+# "Maiden Voyage - Remastered 1999/Rudy Van Gelder Edition": the edition a streaming export appends
+# to a title with a dash (a bracketed one is dropped by _fold already).
+_EDITION_TAIL = re.compile(
+    r"\s+[-\u2013\u2014]\s+.*\b(remaster(ed)?|edition|mono|stereo|anniversary|deluxe|expanded|reissue|version)\b.*$",
+    re.IGNORECASE)
+
+
+def title_variants(title: str) -> list[str]:
+    """Folded forms of a title to look up, most specific first: as given, then without an edition tail."""
+    variants = [_fold(title), _fold(_EDITION_TAIL.sub("", title or ""))]
+    return [v for i, v in enumerate(variants) if v and v not in variants[:i]]
+
+
 def owned_by_name(artist: str, title: str, duration: float | None,
                   index: dict[str, list[LibraryFile]] | None = None) -> LibraryFile | None:
-    """A file with the same artist and title (folded) and, when both are known, a duration within 3 s.
+    """A file with the same artist and title (folded, with or without an edition tail) and, when
+    both are known, a duration within 3 s.
 
     Looser than an ID match: it can pick the album version when the single edit was meant, so
     callers show it as "owned (by name)". Pass a `name_index()` when checking many tracks.
     """
-    want_title, want_artist = _fold(title), _fold(artist)
-    if not want_title:
-        return None
-    rows = (index if index is not None else name_index()).get(want_title, [])
-    for row in rows:
-        if want_artist and _fold(row.artist) != want_artist and _fold(row.albumartist) != want_artist:
-            continue
-        if duration and row.duration and abs(row.duration - duration) > NAME_DURATION_SLACK:
-            continue
-        return row
+    want_artist = _fold(artist)
+    index = index if index is not None else name_index()
+    for want_title in title_variants(title):
+        for row in index.get(want_title, []):
+            if want_artist and _fold(row.artist) != want_artist and _fold(row.albumartist) != want_artist:
+                continue
+            if duration and row.duration and abs(row.duration - duration) > NAME_DURATION_SLACK:
+                continue
+            return row
+    return None
+
+
+def file_in_folder(folder: Path | str, title: str, duration: float | None) -> LibraryFile | None:
+    """The file that is this track inside an album folder known to hold it: by title (with or
+    without an edition tail), else the one file whose duration is within 3 s when there is
+    exactly one. For a track whose album the picker just imported, where the tags' recording
+    IDs differ from the playlist's (MusicBrainz keeps one recording per remaster)."""
+    files = folder_files(folder)
+    for want in title_variants(title):
+        for row in files:
+            if _fold(row.title) == want:
+                return row
+    if duration:
+        close = [row for row in files if row.duration and abs(row.duration - duration) <= NAME_DURATION_SLACK]
+        if len(close) == 1:
+            return close[0]
     return None
 
 

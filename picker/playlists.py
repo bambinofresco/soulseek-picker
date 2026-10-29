@@ -23,14 +23,14 @@ from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
 from datetime import timedelta
 
-from sqlmodel import select
+from sqlmodel import col, select
 
 from . import library, owned
 from .clients import services
 from .config import Settings, get_settings
 from .db import session
 from .jobs import handler, log_event, worker
-from .models import Album, Job, Playlist, PlaylistAlbum, PlaylistTrack
+from .models import Album, Import, Job, Playlist, PlaylistAlbum, PlaylistTrack, QueueItem
 from .clients.http import ServiceError
 from .queries import _BRACKETED, normalize
 
@@ -462,10 +462,25 @@ def rechoose(playlist_id: int) -> None:
 
 # Owned --------------------------------------------------------------------------------------
 
+def imported_folders(tracks: list[PlaylistTrack]) -> dict[int, str]:
+    """Queue item -> the album folder its import produced, for the rows whose album the run brought in."""
+    item_ids = {t.queue_item_id for t in tracks if t.queue_item_id}
+    if not item_ids:
+        return {}
+    with session() as s:
+        items = s.exec(select(QueueItem).where(col(QueueItem.id).in_(item_ids), QueueItem.state == "done")).all()
+        import_ids = [i.import_id for i in items if i.import_id]
+        imports = {imp.id: imp for imp in s.exec(select(Import).where(col(Import.id).in_(import_ids)))} if import_ids else {}
+    return {i.id: imports[i.import_id].album_dir for i in items
+            if i.import_id in imports and imports[i.import_id].album_dir}
+
+
 def mark_owned(tracks: list[PlaylistTrack]) -> None:
-    """Which rows the library already has: by recording ID, else by artist, title and duration."""
+    """Which rows the library already has: by recording ID; else by artist, title and duration;
+    else, for a row whose album the run imported, the matching file in that album's folder."""
     by_id = library.owned_recordings([t.recording_mbid for t in tracks if t.recording_mbid])
     index = library.name_index()
+    folders = imported_folders(tracks)
     for track in tracks:
         hit = by_id.get(track.recording_mbid) if track.recording_mbid else None
         if hit:
@@ -475,6 +490,8 @@ def mark_owned(tracks: list[PlaylistTrack]) -> None:
         if not track.owned_unticked:
             duration = track.duration_ms / 1000 if track.duration_ms else None
             hit = library.owned_by_name(first_artist(track.artist), track.title, duration, index)
+            if hit is None and track.queue_item_id in folders:
+                hit = library.file_in_folder(folders[track.queue_item_id], track.title, duration)
         track.owned_path, track.owned_how = (hit.path, "name") if hit else (None, None)
 
 

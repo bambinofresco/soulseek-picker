@@ -511,3 +511,20 @@ def test_queue_pages(world, settings, monkeypatch):
     with session() as s:
         assert s.get(Playlist, playlist.id).state == "done"
         assert s.exec(select(QueueItem).where(QueueItem.rg_mbid == "rg-2", QueueItem.playlist_id == playlist.id)).first().state == "cancelled"
+
+
+def test_skipping_the_last_open_item_finishes_the_run(world):
+    from picker.models import Playlist
+
+    with session() as s:
+        playlist = Playlist(name="Mix", csv_hash="h", state="running")
+        s.add(playlist)
+        s.commit()
+        s.refresh(playlist)
+    done = queueing.add("rg-1", source="playlist", playlist_id=playlist.id)
+    queueing._save(done, state="done")
+    waiting = queueing.add("rg-2", source="playlist", playlist_id=playlist.id)
+    queueing._save(waiting, state="none_found")  # the tick loop stops here: nothing is active
+    queueing.skip(waiting.id)
+    with session() as s:
+        assert s.get(Playlist, playlist.id).state == "done"

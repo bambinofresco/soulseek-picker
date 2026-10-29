@@ -122,6 +122,14 @@ def test_owned_lookups(settings):
     assert library.owned_by_name("Radiohead", "Airbag", 250) is None  # 50 s off
     assert library.owned_by_name("Radiohead", "Paranoid Android", None) is None
     assert library.owned_by_name("Blur", "Airbag", None) is None
+    # The export's edition tail ("Maiden Voyage - Remastered 1999/Rudy Van Gelder Edition") is not part of the title.
+    assert library.owned_by_name("Radiohead", "Airbag - Remastered 2009/Collector's Edition", 200).path.endswith("01 Track 1.flac")
+    assert library.title_variants("Airbag - Live at Earls Court") == ["airbag live at earls court"]  # not an edition
+    # Inside a folder known to hold the track: by title, else the one file with that duration.
+    assert library.file_in_folder(folder, "Airbag - 2009 Remaster", None).path.endswith("01 Track 1.flac")
+    assert library.file_in_folder(folder, "Track 2", None).path.endswith("02 Track 2.flac")
+    assert library.file_in_folder(folder, "Something Else", 200) is None  # two files are 200 s: ambiguous
+    assert library.file_in_folder(folder, "Something Else", 500) is None
     assert len(library.album_files(RG.upper())) == 2
     assert len(library.folder_files(folder)) == 2
     library.forget_folder(folder)

@@ -106,6 +106,7 @@ def skip(item_id: int) -> None:
         item = s.get(QueueItem, item_id)
     if item and item.state not in TERMINAL:
         _save(item, state="skipped", note="skipped by the user")
+        _finish_playlists()  # the tick loop may have stopped already (nothing active): the run ends here
 
 
 def requeue(item_id: int) -> None:

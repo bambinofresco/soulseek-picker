@@ -244,6 +244,11 @@ class SyncResult:
     plex: PlexResult
 
 
+def _some(names: list[str], limit: int = 3) -> str:
+    shown = ", ".join(names[:limit])
+    return shown if len(names) <= limit else f"{shown} and {len(names) - limit} more"
+
+
 async def sync(playlist_id: int, settings: Settings | None = None) -> SyncResult | None:
     settings = settings or get_settings()
     with session() as s:
@@ -254,7 +259,11 @@ async def sync(playlist_id: int, settings: Settings | None = None) -> SyncResult
     path = write_m3u(playlist, tracks, settings)
     plex = await sync_plex(playlist, tracks, settings)
     have = sum(1 for t in tracks if t.owned_path)
-    note = f"{have} of {len(tracks)} tracks in the library; M3U8 written"
+    note = f"{have} of {len(tracks)} tracks in the library"
+    absent = [f"{first_artist(t.artist)} - {t.title}" for t in tracks if not t.owned_path]
+    if absent:
+        note += f" (not in the library: {_some(absent)})"
+    note += "; M3U8 written"
     if plex.state == "off":
         note += "; Plex not configured"
     elif plex.state == "error":
@@ -267,7 +276,7 @@ async def sync(playlist_id: int, settings: Settings | None = None) -> SyncResult
         bits += [f"{plex.moved} moved"] if plex.moved else []
         note += "; Plex playlist " + ("created" if plex.created else "in step") + (f" ({', '.join(bits)})" if bits else "")
         if plex.missing:
-            note += f"; {len(plex.missing)} not in Plex yet"
+            note += f"; {len(plex.missing)} not in Plex yet ({_some(plex.missing)})"
     with session() as s:
         row = s.get(Playlist, playlist_id)
         row.m3u_path, row.plex_rating_key, row.last_sync, row.sync_note = str(path), playlist.plex_rating_key, utcnow(), note

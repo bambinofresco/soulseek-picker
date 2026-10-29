@@ -526,3 +526,44 @@ async def test_review_page_shows_the_single_mode_and_outcome_line(settings, mb, 
     playlists.set_options(playlist.id, full_albums=False)
     page = client.get(f"/playlists/{playlist.id}").text
     assert "The single <em>Smells Like Teen Spirit</em> (1991), 4 tracks" in page and "~120 MB" in page
+
+
+async def test_imported_album_folder_matches_a_split_recording_by_title_or_duration(settings, mb, tmp_path):
+    """The playlist's recording is the 1999 remaster; the imported album's tags carry another recording ID."""
+    import os
+
+    from picker.models import Import, LibraryFile, QueueItem
+
+    text = CSV.split("\n")[0] + "\n" + "spotify:track:7,Maiden Voyage - Remastered 1999/Rudy Van Gelder Edition,Maiden Voyage (Remastered 1999/Rudy Van Gelder Edition),Herbie Hancock,1999-01-01,474000,USBN20400123,Herbie Hancock\n"
+    playlist = await resolved_playlist(settings, mb, text=text)
+    track = tracks_of(playlist.id)[0]
+    assert track.owned_path is None
+    folder = str(tmp_path / "Herbie Hancock" / "Maiden Voyage (1965)")
+    with session() as s:
+        imp = Import(rg_mbid="rg-voyage", state="imported", album_dir=folder)
+        s.add(imp)
+        s.commit()
+        s.refresh(imp)
+        item = QueueItem(rg_mbid="rg-voyage", state="done", import_id=imp.id, playlist_id=playlist.id)
+        s.add(item)
+        s.commit()
+        s.refresh(item)
+        s.add(LibraryFile(path=os.path.join(folder, "01 Maiden Voyage.flac"), folder=folder, title="Maiden Voyage", artist="Herbie Hancock",
+                          duration=473.9, recording_mbid="rec-voyage-1965"))
+        s.add(LibraryFile(path=os.path.join(folder, "02 The Eye of the Hurricane.flac"), folder=folder, title="The Eye of the Hurricane",
+                          artist="Herbie Hancock", duration=360.0, recording_mbid="rec-eye"))
+        row = s.get(PlaylistTrack, track.id)
+        row.queue_item_id = item.id
+        s.add(row)
+        s.commit()
+    playlists.mark_owned([tracks_of(playlist.id)[0]])
+    rows = tracks_of(playlist.id)
+    # by name already works once the edition tail is ignored; make the title unmatchable to reach the folder fallback
+    with session() as s:
+        row = s.get(PlaylistTrack, track.id)
+        row.title = "Voyage of the Maiden"
+        s.add(row)
+        s.commit()
+    rows = tracks_of(playlist.id)
+    playlists.mark_owned(rows)
+    assert rows[0].owned_path.endswith("01 Maiden Voyage.flac") and rows[0].owned_how == "name"  # the one file of that length
