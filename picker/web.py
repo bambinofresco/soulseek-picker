@@ -116,6 +116,20 @@ templates.env.globals["normalize"] = _normalize
 templates.env.globals["playlists_first_artist"] = playlists.first_artist
 
 
+def _static_version() -> str:
+    """A short hash of the static files, so a browser never pairs a new page with a cached old stylesheet."""
+    import hashlib
+
+    digest = hashlib.sha1()
+    for path in sorted((Path(__file__).parent / "static").glob("*")):
+        if path.is_file():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:10]
+
+
+templates.env.globals["static_version"] = _static_version()
+
+
 def render(request: Request, name: str, **context) -> HTMLResponse:
     return templates.TemplateResponse(request, name, context)
 
@@ -733,8 +747,12 @@ async def playlist_track_action(request: Request, playlist_id: int, track_id: in
 
 
 @router.post("/playlists/{playlist_id}/resolve")
-async def playlist_resolve(playlist_id: int):
-    playlists.queue_resolve(playlist_id)
+async def playlist_resolve(request: Request, playlist_id: int):
+    form = await request.form()
+    if form.get("everything"):
+        playlists.reset_resolution(playlist_id)
+    else:
+        playlists.queue_resolve(playlist_id)
     return RedirectResponse(f"/playlists/{playlist_id}", status_code=303)
 
 

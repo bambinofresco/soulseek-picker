@@ -435,3 +435,34 @@ async def test_a_recording_only_on_compilations_finds_the_named_studio_album(set
     playlists.set_track_album(voyage.id, "rg-cozy")
     r = await playlists.review(playlist.id, settings)
     assert [g.rg_mbid for g in r.groups if g.rg_mbid in ("rg-cozy", "rg-voyage")] == ["rg-cozy"]
+
+
+async def test_resolve_all_rows_again_keeps_hand_fixes_and_modes(settings, mb):
+    playlist = await resolved_playlist(settings, mb)
+    before = {t.title: t for t in tracks_of(playlist.id)}
+    playlists.set_mode(playlist.id, RAM, "skip")
+    playlists.set_track_manual(before["Textual"].id, "rg-manual")
+    playlists.toggle_track(before["Come as You Are"].id, "drop")
+    mb.isrc_calls.clear()
+    assert playlists.reset_resolution(playlist.id) == 3  # Smells Like Teen Spirit, Get Lucky, Obscure Song; not the manual or dropped row
+    rows = {t.title: t for t in tracks_of(playlist.id)}
+    assert rows["Smells Like Teen Spirit"].resolution is None and rows["Smells Like Teen Spirit"].rg_mbid is None
+    assert rows["Textual"].resolution == "manual" and rows["Textual"].rg_mbid == "rg-manual"
+    assert rows["Come as You Are"].dropped and rows["Come as You Are"].rg_mbid == NEVERMIND
+    with session() as s:
+        assert s.get(Playlist, playlist.id).state == "resolving"
+        job = s.exec(select(Job).where(Job.kind == "resolve", Job.status == "queued")).first()
+    await playlists.run_resolve(job)
+    rows = {t.title: t for t in tracks_of(playlist.id)}
+    assert rows["Smells Like Teen Spirit"].resolution == "isrc" and rows["Get Lucky"].rg_mbid == RAM
+    assert mb.isrc_calls == [["USGF19942501", "USQX91300108"]]
+    r = await playlists.review(playlist.id, settings)
+    assert not r.resolving and [g.mode for g in r.groups if g.rg_mbid == RAM] == ["skip"]  # the mode survived
+
+
+def test_static_files_are_versioned():
+    from picker import web
+
+    assert len(web._static_version()) == 10
+    page = web.templates.get_template("base.html").render(request=None)
+    assert f"/static/style.css?v={web._static_version()}" in page

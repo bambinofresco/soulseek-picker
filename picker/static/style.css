@@ -240,6 +240,7 @@ ul.albums li.mode-skip { opacity: 0.7; }
 .album-mode.wide { grid-template-columns: auto auto auto auto; }
 .album-mode label { white-space: nowrap; }
 .album-group table.tracks { margin-top: 8px; }
+.resolve-again { margin-top: 16px; gap: 16px; }
 .album-group table.tracks select { font: inherit; font-size: 0.85em; max-width: 280px; }
 form.inline { display: flex; gap: 6px; flex-wrap: wrap; }
 form.inline input { max-width: 180px; }

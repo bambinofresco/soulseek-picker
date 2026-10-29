@@ -750,6 +750,32 @@ def toggle_track(track_id: int, what: str) -> None:
         s.commit()
 
 
+def reset_resolution(playlist_id: int) -> int:
+    """Forget how every row was matched, except rows fixed by hand, and resolve again; album
+    modes and dropped rows are kept. For a playlist in review, after the matching improved."""
+    with session() as s:
+        playlist = s.get(Playlist, playlist_id)
+        if playlist is None or playlist.state not in ("review", "resolving"):
+            return 0
+        tracks = s.exec(select(PlaylistTrack).where(PlaylistTrack.playlist_id == playlist_id)).all()
+        count = 0
+        for track in tracks:
+            if track.dropped or track.resolution == "manual":
+                continue
+            track.recording_mbid = track.recording_title = track.recording_length = None
+            track.rg_mbid = track.single_rg_mbid = None
+            track.use_single, track.options, track.resolution = None, [], None
+            track.owned_path = track.owned_how = None  # mark_owned finds it again
+            s.add(track)
+            count += 1
+        playlist.resolved = len(tracks) - count
+        s.add(playlist)
+        s.commit()
+    if count:
+        queue_resolve(playlist_id)
+    return count
+
+
 def delete_playlist(playlist_id: int) -> None:
     """Rows only; nothing on disk, in Plex or in the queue is touched."""
     with session() as s:

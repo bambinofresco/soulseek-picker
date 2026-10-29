@@ -112,7 +112,16 @@
 </details>
 {% endif %}
 
-{% if p.state == "review" and r.attention and r.attention|selectattr("resolution", "none")|list %}
+{% if p.state == "review" %}
+<div class="toolbar resolve-again">
+{% if r.attention and r.attention|selectattr("resolution", "none")|list %}
 <form method="post" action="/playlists/{{ p.id }}/resolve"><button class="small">Resolve the untried rows</button></form>
+{% endif %}
+<form method="post" action="/playlists/{{ p.id }}/resolve" onsubmit="return confirm('Match every row to MusicBrainz again? Rows you fixed by hand, dropped rows and the album modes are kept.')">
+  <input type="hidden" name="everything" value="1">
+  <button class="small">Resolve all rows again</button>
+  <span class="small muted">after the matching improved; keeps rows fixed by hand and the album modes</span>
+</form>
+</div>
 {% endif %}
 </div>
