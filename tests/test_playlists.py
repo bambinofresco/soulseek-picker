@@ -444,6 +444,11 @@ async def test_resolve_all_rows_again_keeps_hand_fixes_and_modes(settings, mb):
     playlists.set_track_manual(before["Textual"].id, "rg-manual")
     playlists.toggle_track(before["Come as You Are"].id, "drop")
     mb.isrc_calls.clear()
+    with session() as s:  # the worker would have marked the first resolve job done
+        for job in s.exec(select(Job).where(Job.kind == "resolve")):
+            job.status = "done"
+            s.add(job)
+        s.commit()
     assert playlists.reset_resolution(playlist.id) == 3  # Smells Like Teen Spirit, Get Lucky, Obscure Song; not the manual or dropped row
     rows = {t.title: t for t in tracks_of(playlist.id)}
     assert rows["Smells Like Teen Spirit"].resolution is None and rows["Smells Like Teen Spirit"].rg_mbid is None
