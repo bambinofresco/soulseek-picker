@@ -329,7 +329,12 @@ text-strong, text-weak, none). From the recording's releases the album is chosen
 CSV names when it is an album or EP; otherwise, with `prefer_studio_album`, the earliest
 release group of primary type Album and no secondary type that holds the recording;
 otherwise the CSV's album. The recording itself never changes (a live version stays live).
-Release groups MusicBrainz splits are not merged (the review page shows both). A single or
+MusicBrainz often keeps one recording per remaster, and the one carrying the CSV's ISRC may
+sit only on compilations: when the CSV names an album that none of the recording's release
+groups is, and none is a studio album or EP by the track's artist, a release-group search by
+artist and album name (edition suffixes such as "- Remastered 1999" stripped) adds the named
+studio album or EP as an option, which the rule above then picks. Release groups
+MusicBrainz splits are not merged (the review page shows both). A single or
 EP holding the recording is kept aside so the row can switch between it and the album; with
 the **Full albums** toggle off a row defaults to its single, in full.
 

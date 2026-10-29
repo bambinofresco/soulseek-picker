@@ -74,6 +74,13 @@ A `resolve` job runs after upload, with progress on the review page (rows done /
      type Album and no secondary type (not Compilation, Live, Soundtrack, Remix) that holds the
      recording;
    - otherwise the CSV's album.
+   MusicBrainz keeps one recording per remaster, and the recording carrying the CSV's ISRC is
+   sometimes listed only on compilations (Herbie Hancock's "Maiden Voyage - Remastered 1999"
+   resolved to a 43-track Various Artists coffee-shop compilation). So when the CSV names an
+   album that none of the recording's release groups is, and none of them is a studio album or
+   EP by the track's artist, one release-group search by artist and album name (edition
+   suffixes stripped) adds the named studio album or EP as an option, and the rule above picks
+   it. The compilation stays in the row's From list.
    The review page shows the choice and offers the alternatives per album ("From: Greatest
    Hits (1998) → The Album (1973)"). A recording that appears only on singles and compilations
    (MusicBrainz often keeps a single edit or radio version as its own recording) is badged

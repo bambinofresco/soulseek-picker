@@ -3,6 +3,8 @@
 <div id="albums" {% if r.resolving %}hx-get="/playlists/{{ p.id }}/albums" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
 {% if r.resolving %}
 <p class="banner"><span class="badge">resolving</span> {{ p.resolved }} of {{ total }} rows matched to MusicBrainz so far…</p>
+{% else %}
+<script>if (document.querySelector(".state-resolving")) location.reload();</script>
 {% endif %}
 
 <p class="counts">
@@ -27,13 +29,14 @@
           {% if g.estimate_mb %} · ~{{ g.estimate_mb }} MB{% endif %}
         </span>
       </span>
-      <span class="album-mode" onclick="event.preventDefault()">
+      <span class="album-mode{% if g.partial_copy %} wide{% endif %}" onclick="if (event.target === this) event.preventDefault()">
         {% if g.partial_copy %}{% set choices = [("upgrade", "Full album (replaces your " ~ g.owned.have ~ " tracks)"), ("tracks_plus", "These " ~ g.wanted_tracks ~ " + the " ~ g.owned.have ~ " you have"), ("skip", "Skip")] %}
         {% else %}{% set choices = [("full", "Full album"), ("tracks", "Only these " ~ g.tracks|length), ("upgrade", "Upgrade"), ("skip", "Skip")] %}{% endif %}
         {% for m, label in choices %}
         {% if m != "upgrade" or g.owned %}
         <label class="small"><input type="radio" name="mode-{{ g.rg_mbid }}" value="{{ m }}" {% if g.mode == m %}checked{% endif %}
           hx-post="/playlists/{{ p.id }}/albums/{{ g.rg_mbid }}/mode" hx-vals='{"mode": "{{ m }}"}' hx-target="#albums" hx-swap="outerHTML"> {{ label }}{% if m == "skip" and g.owned %} (owned){% endif %}</label>
+        {% else %}<span class="slot"></span>
         {% endif %}
         {% endfor %}
         {% if g.choice.mode %}<a class="small muted" href="#" hx-post="/playlists/{{ p.id }}/albums/{{ g.rg_mbid }}/mode" hx-vals='{"mode": "auto"}' hx-target="#albums" hx-swap="outerHTML" title="Follow the top toggle again">auto</a>{% endif %}

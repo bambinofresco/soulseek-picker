@@ -322,6 +322,61 @@ def single_for(options: list[AlbumOption], title: str) -> AlbumOption | None:
     return _earliest(named) or _earliest(singles)
 
 
+# "Album - Remastered 2009", "Album - Deluxe Edition": the edition suffix a CSV exporter appends.
+_EDITION_SUFFIX = re.compile(
+    r"\s+[-\u2013\u2014]\s+[^-\u2013\u2014]*\b(remaster(ed)?|edition|deluxe|expanded|anniversary|version|reissue|mono|stereo)\b.*$",
+    re.IGNORECASE)
+
+
+def album_key(text: str) -> str:
+    """The album name as a comparison key: edition suffixes and brackets gone, normalized."""
+    return normalize(_EDITION_SUFFIX.sub("", text or ""))
+
+
+def needs_named_album(track: PlaylistTrack, options: list[AlbumOption]) -> bool:
+    """The CSV names an album none of the recording's release groups is, and no option is a
+    studio album or EP by the track's artist: MusicBrainz has split the recording (one per
+    remaster) and this one is only on compilations."""
+    key = album_key(track.album)
+    if not key:
+        return False
+    if any(album_key(o.title) == key for o in options):
+        return False
+    artist = normalize(first_artist(track.artist))
+    return not any(o.kind in ("album", "ep") and artist and artist in normalize(o.artist) for o in options)
+
+
+def option_from_release_group(group: dict) -> AlbumOption:
+    name, mbid = _credit(group)
+    return AlbumOption(rg_mbid=group["id"], title=group.get("title") or "", artist=name, artist_mbid=mbid,
+                       kind=classify(group.get("primary-type"), group.get("secondary-types") or []),
+                       primary_type=group.get("primary-type"), secondary_types=list(group.get("secondary-types") or []),
+                       date=group.get("first-release-date") or None)
+
+
+async def find_named_album(track: PlaylistTrack, mb) -> AlbumOption | None:
+    """The studio album or EP the CSV names, by the track's artist, from a release-group search."""
+    artist = first_artist(track.artist)
+    title = _EDITION_SUFFIX.sub("", track.album or "").strip()
+    groups = await mb.search_release_groups(artist, title)
+    key, want_artist = album_key(title), normalize(artist)
+    found = [o for o in (option_from_release_group(g) for g in groups if g.get("id"))
+             if o.kind in ("album", "ep") and album_key(o.title) == key and (not want_artist or want_artist in normalize(o.artist))]
+    return _earliest(found)
+
+
+async def add_named_album(track: PlaylistTrack, playlist: Playlist, mb) -> None:
+    """After a recording resolves: add the CSV's album when MusicBrainz's split recordings hid it, and choose again."""
+    options = [AlbumOption(**o) for o in track.options or []]
+    if not needs_named_album(track, options):
+        return
+    option = await find_named_album(track, mb)
+    if option is None or any(o.rg_mbid == option.rg_mbid for o in options):
+        return
+    track.options = [*track.options, option.to_dict()]
+    choose_for(track, playlist, options + [option])
+
+
 def rank_text_hits(recordings: list[dict], artist: str, title: str, duration_ms: int | None) -> tuple[dict | None, str]:
     """The best recording for a row without an ISRC hit, and how sure that is."""
     want_artist = normalize(first_artist(artist))
@@ -452,7 +507,29 @@ async def run_resolve(job: Job) -> None:
     done = len(tracks) - len(todo)
     mb = services().mb
     log_event(job.id, None, f"Resolving {len(todo)} rows of playlist “{playlist.name}”")
+    try:
+        done = await _resolve_rows(todo, playlist, playlist_id, mb, done)
+    except Exception as exc:  # noqa: BLE001 - the page must not stay "resolving" forever
+        with session() as s:
+            playlist = s.get(Playlist, playlist_id)
+            if playlist.state == "resolving":
+                playlist.state = "review"
+            playlist.error = f"Resolving stopped: {exc}. Resolve the untried rows to carry on."
+            s.add(playlist)
+            s.commit()
+        raise
+    with session() as s:
+        playlist = s.get(Playlist, playlist_id)
+        if playlist.state == "resolving":
+            playlist.state = "review"
+        s.add(playlist)
+        s.commit()
+    resolved = sum(1 for t in todo if t.resolution not in (None, "none"))
+    log_event(job.id, None, f"Playlist “{playlist.name}”: {resolved} of {len(todo)} rows resolved")
 
+
+async def _resolve_rows(todo: list[PlaylistTrack], playlist: Playlist, playlist_id: int, mb, done: int) -> int:
+    """Match every row in todo: ISRC batches first, then a text search for the rest. Returns the resolved count."""
     with_isrc = [t for t in todo if t.isrc]
     for chunk in _chunks(with_isrc, ISRC_BATCH):
         recordings = await mb.recordings_by_isrcs([t.isrc for t in chunk])
@@ -465,6 +542,7 @@ async def run_resolve(job: Job) -> None:
             if hits:
                 best = max(hits, key=lambda r: len(r.get("releases") or []))
                 apply_recording(track, best, "isrc", playlist)
+                await add_named_album(track, playlist, mb)
                 done += 1
         _save_tracks(chunk, playlist_id, done)
 
@@ -475,6 +553,7 @@ async def run_resolve(job: Job) -> None:
         rec, how = rank_text_hits(recordings, track.artist, track.title, track.duration_ms)
         if rec:
             apply_recording(track, rec, how, playlist)
+            await add_named_album(track, playlist, mb)
         else:
             track.resolution = "none"
         done += 1
@@ -482,14 +561,7 @@ async def run_resolve(job: Job) -> None:
 
     mark_owned(todo)
     _save_tracks(todo, playlist_id, done)
-    with session() as s:
-        playlist = s.get(Playlist, playlist_id)
-        if playlist.state == "resolving":
-            playlist.state = "review"
-        s.add(playlist)
-        s.commit()
-    resolved = sum(1 for t in todo if t.resolution not in (None, "none"))
-    log_event(job.id, None, f"Playlist “{playlist.name}”: {resolved} of {len(todo)} rows resolved")
+    return done
 
 
 # The review page --------------------------------------------------------------------------

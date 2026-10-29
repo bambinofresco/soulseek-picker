@@ -55,13 +55,27 @@ TEXTUAL_LIVE = recording("rec-textual-live", "Textual", None, 240000, [release("
                          artist="Textband", score=100)
 
 
+# MusicBrainz keeps one recording per remaster; the one carrying this ISRC is only on a compilation.
+VOYAGE = recording("rec-voyage", "Maiden Voyage (remastered 1999/Rudy Van Gelder Edition)", "USBN20400123", 474000, [
+    release("rg-cozy", "Cozy Coffee Shop", secondary=["Compilation"], date="2025-03-01", tracks=43, artist="Various Artists", artist_id="ar-va"),
+], artist="Herbie Hancock")
+VOYAGE_GROUPS = [
+    {"id": "rg-takin", "title": "Takin' Off / Maiden Voyage", "primary-type": "Album", "secondary-types": ["Compilation"],
+     "first-release-date": "1996", "artist-credit": [{"name": "Herbie Hancock", "artist": {"id": "ar-hh"}}]},
+    {"id": "rg-voyage", "title": "Maiden Voyage", "primary-type": "Album", "first-release-date": "1965-05-17",
+     "artist-credit": [{"name": "Herbie Hancock", "artist": {"id": "ar-hh"}}]},
+    {"id": "rg-other-voyage", "title": "Maiden Voyage", "primary-type": "Album", "first-release-date": "2015",
+     "artist-credit": [{"name": "Simone Quatrana", "artist": {"id": "ar-sq"}}]},
+]
+
+
 class FakeMB:
     def __init__(self):
-        self.isrc_calls, self.text_calls = [], []
+        self.isrc_calls, self.text_calls, self.group_calls = [], [], []
 
     async def recordings_by_isrcs(self, isrcs):
         self.isrc_calls.append(list(isrcs))
-        return [r for r in (SLTS, CAYA, LUCKY) if r["isrcs"][0] in isrcs]
+        return [r for r in (SLTS, CAYA, LUCKY, VOYAGE) if r["isrcs"][0] in isrcs]
 
     async def search_recordings(self, artist, title, duration_ms=None, limit=10):
         self.text_calls.append((artist, title, duration_ms))
@@ -70,6 +84,9 @@ class FakeMB:
         return []
 
     async def search_release_groups(self, artist, album, limit=25):
+        self.group_calls.append((artist, album))
+        if album == "Maiden Voyage":
+            return VOYAGE_GROUPS
         return [{"id": "rg-manual", "title": album, "artist-credit": [{"name": artist}], "primary-type": "Album",
                  "first-release-date": "2001-01-01"}]
 
@@ -371,3 +388,50 @@ async def test_pages(client, settings, mb):
     assert "Could not read the CSV" in bad.text
     assert client.post(f"/playlists/{playlist_id}/delete", follow_redirects=False).status_code == 303
     assert client.get(f"/playlists/{playlist_id}").status_code == 404
+
+
+async def test_a_crashed_resolve_leaves_the_playlist_in_review_with_an_error(settings, mb):
+    import pytest
+
+    from picker.clients.http import ServiceError
+
+    async def boom(isrcs):
+        raise ServiceError("musicbrainz", "503 service unavailable")
+
+    mb.recordings_by_isrcs = boom
+    playlist = playlists.create_playlist("Mix", CSV)
+    with session() as s:
+        job = s.exec(select(Job).where(Job.kind == "resolve")).first()
+    with pytest.raises(ServiceError):
+        await playlists.run_resolve(job)
+    with session() as s:
+        playlist = s.get(Playlist, playlist.id)
+    assert playlist.state == "review" and "Resolving stopped" in playlist.error
+    assert all(t.resolution is None for t in tracks_of(playlist.id))  # untried, so Resolve the untried rows retries them
+    r = await playlists.review(playlist.id, settings)
+    assert r.resolving  # the Start button stays disabled until the rows are resolved or dropped
+
+
+def test_album_key_drops_edition_suffixes():
+    assert playlists.album_key("Maiden Voyage - Remastered 1999/Rudy Van Gelder Edition") == "maiden voyage"
+    assert playlists.album_key("Nevermind (Remastered)") == "nevermind"
+    assert playlists.album_key("Abbey Road (Super Deluxe Edition)") == "abbey road"
+    assert playlists.album_key("Takin' Off / Maiden Voyage") == "takin off maiden voyage"
+    assert playlists.album_key("Monika / Zabawa w ciemności") == "monika zabawa w ciemnosci"  # not an edition suffix
+
+
+async def test_a_recording_only_on_compilations_finds_the_named_studio_album(settings, mb):
+    text = CSV + "spotify:track:7,Maiden Voyage - Remastered 1999/Rudy Van Gelder Edition,Maiden Voyage - Remastered 1999/Rudy Van Gelder Edition,Herbie Hancock,1999-01-01,474000,USBN20400123,Herbie Hancock\n"
+    playlist = await resolved_playlist(settings, mb, text=text)
+    assert mb.group_calls == [("Herbie Hancock", "Maiden Voyage")]  # one lookup, for the one row that needed it
+    voyage = [t for t in tracks_of(playlist.id) if t.title.startswith("Maiden")][0]
+    assert voyage.resolution == "isrc" and voyage.rg_mbid == "rg-voyage"  # the 1965 album, not the compilation or the other artist's
+    assert [o["rg_mbid"] for o in voyage.options] == ["rg-cozy", "rg-voyage"]
+    r = await playlists.review(playlist.id, settings)
+    group = [g for g in r.groups if g.rg_mbid == "rg-voyage"][0]
+    assert group.album.artist == "Herbie Hancock" and group.album.first_release_date == "1965-05-17"
+    assert not [g for g in r.groups if g.rg_mbid == "rg-cozy"]
+    # The compilation stays available in the row's From list, and picking it by hand sticks.
+    playlists.set_track_album(voyage.id, "rg-cozy")
+    r = await playlists.review(playlist.id, settings)
+    assert [g.rg_mbid for g in r.groups if g.rg_mbid in ("rg-cozy", "rg-voyage")] == ["rg-cozy"]

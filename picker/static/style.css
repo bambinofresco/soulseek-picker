@@ -235,7 +235,9 @@ ul.albums li.mode-skip { opacity: 0.7; }
 .album-group details[open] summary::before { content: "▾"; }
 .album-head { display: flex; flex-direction: column; gap: 2px; flex: 1 1 320px; }
 .album-name { font-weight: 600; }
-.album-mode { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+/* The mode controls sit in fixed columns on the right so the choices line up from row to row. */
+.album-mode { display: grid; grid-template-columns: 110px 120px 90px 110px auto; gap: 6px 10px; align-items: center; margin-left: auto; }
+.album-mode.wide { grid-template-columns: auto auto auto auto; }
 .album-mode label { white-space: nowrap; }
 .album-group table.tracks { margin-top: 8px; }
 .album-group table.tracks select { font: inherit; font-size: 0.85em; max-width: 280px; }
@@ -290,6 +292,8 @@ details.sort-sheet { display: none; }
   details.sort-sheet .filters select, details.sort-sheet .filters label { flex: 1 1 100%; min-height: 44px; }
   details.sort-sheet .toggle { margin-left: 0; display: inline-block; padding: 8px 0; }
   .toolbar h2 { flex: 1 1 100%; }
+  .album-mode, .album-mode.wide { display: flex; flex-wrap: wrap; margin-left: 0; flex: 1 1 100%; }
+  .album-mode .slot { display: none; }
 
   table.candidates { display: block; width: 100%; }
   table.candidates thead { display: none; }
