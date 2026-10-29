@@ -83,6 +83,9 @@ class FakeMB:
             return [TEXTUAL_LIVE, TEXTUAL]  # the live one first: ranking must prefer the right length
         return []
 
+    async def release_group_track_counts(self, rg_mbid):
+        return {"rg-voyage": [5, 5, 7, 0]}.get(rg_mbid, [])
+
     async def search_release_groups(self, artist, album, limit=25):
         self.group_calls.append((artist, album))
         if album == "Maiden Voyage":
@@ -249,33 +252,63 @@ async def test_review_groups_modes_and_toggles(settings, mb):
     assert [g.mode for g in r.groups] == ["full", "full", "full"]
     assert r.groups[0].estimate_mb == 12 * 30 and r.total_mb == (12 + 13 + 10) * 30
     assert [t.position for t in r.attention] == [4]
-    assert r.counts == {"full": 3, "tracks": 0, "tracks_plus": 0, "upgrade": 0, "skip": 0, "owned": 0}
+    assert r.counts == {"full": 3, "tracks": 0, "single": 0, "tracks_plus": 0, "upgrade": 0, "skip": 0, "owned": 0}
+    assert r.groups[0].single is None  # two rows and only one has a single: the album offers no Single mode
 
-    # Tracks-only: Smells Like Teen Spirit moves to its single (in full), Come as You Are stays tracks-only.
+    # Full albums off: every album keeps its row and goes tracks-only; rows are never regrouped under a single.
     playlists.set_options(playlist.id, full_albums=False)
     r = await playlists.review(playlist.id, settings)
-    assert [g.rg_mbid for g in r.groups] == [SLTS_SINGLE, NEVERMIND, RAM, "rg-textual"]
-    assert [g.mode for g in r.groups] == ["full", "tracks", "tracks", "tracks"]
-    assert r.groups[1].estimate_mb == 30 and r.groups[0].is_single
-
-    # The row can insist on the album even with the toggle off; per-album modes override the toggle.
-    playlists.set_track_album(tracks_of(playlist.id)[0].id, NEVERMIND)
-    playlists.set_mode(playlist.id, RAM, "full")
-    r = await playlists.review(playlist.id, settings)
     assert [g.rg_mbid for g in r.groups] == [NEVERMIND, RAM, "rg-textual"]
-    assert [g.mode for g in r.groups] == ["tracks", "full", "tracks"]
-    playlists.set_mode(playlist.id, RAM, None)
-    r = await playlists.review(playlist.id, settings)
-    assert r.groups[1].mode == "tracks"
-    with pytest.raises(ValueError):
-        playlists.set_mode(playlist.id, RAM, "bogus")
+    assert [g.mode for g in r.groups] == ["tracks", "tracks", "tracks"]
+    assert r.groups[0].estimate_mb == 2 * 30 and r.total_mb == 4 * 30
 
-    # Dropping a row removes its album when it was the only one.
-    textual = tracks_of(playlist.id)[4]
-    playlists.toggle_track(textual.id, "drop")
+    # Per-album modes override the toggle; "auto" (None) follows it again.
+    playlists.set_mode(playlist.id, NEVERMIND, "full")
     r = await playlists.review(playlist.id, settings)
-    assert [g.rg_mbid for g in r.groups] == [NEVERMIND, RAM]
-    assert [t.position for t in r.attention] == [4]
+    assert [g.mode for g in r.groups] == ["full", "tracks", "tracks"]
+    playlists.set_mode(playlist.id, NEVERMIND, None)
+    r = await playlists.review(playlist.id, settings)
+    assert r.groups[0].mode == "tracks"
+
+
+async def test_single_is_a_mode_of_the_album_row(settings, mb, monkeypatch):
+    from picker import queueing
+    from picker.models import QueueItem
+
+    lines = CSV.split("\n")
+    text = lines[0] + "\n" + next(line for line in lines if "Teen Spirit" in line) + "\n"
+    playlist = await resolved_playlist(settings, mb, text=text)
+    r = await playlists.review(playlist.id, settings)
+    g = r.groups[0]
+    assert g.rg_mbid == NEVERMIND and g.single.rg_mbid == SLTS_SINGLE and g.mode == "full"
+    assert not g.is_single  # Nevermind is an album; only a Single-type release group counts as one
+
+    playlists.set_options(playlist.id, full_albums=False)
+    r = await playlists.review(playlist.id, settings)
+    g = r.groups[0]
+    assert g.rg_mbid == NEVERMIND and g.mode == "single" and g.estimate_mb == 4 * 30  # the single has 4 tracks
+    assert r.counts["single"] == 1 and r.total_mb == 120
+
+    # The run queues the single itself, in full.
+    monkeypatch.setattr(queueing, "ensure_running", lambda: None)
+    monkeypatch.setattr(queueing.plexsync, "queue_sync", lambda *a, **k: None)
+    assert await queueing.start_run(playlist.id, settings) == 1
+    with session() as s:
+        item = s.exec(select(QueueItem)).one()
+    assert item.rg_mbid == SLTS_SINGLE and item.mode == "full" and item.wanted == ["rec-slts"]
+    assert tracks_of(playlist.id)[0].queue_item_id == item.id
+
+
+def test_eps_are_albums_not_singles():
+    options = playlists.options_from_recording(SLTS)
+    ep = playlists.AlbumOption(rg_mbid="rg-ep", title="Teen Spirit EP", artist="Nirvana", artist_mbid=None, kind="ep", primary_type="EP")
+    assert playlists.single_for(options + [ep], "Smells Like Teen Spirit").rg_mbid == SLTS_SINGLE
+    assert playlists.single_for([ep], "Smells Like Teen Spirit") is None
+    playlist = Playlist(name="x", csv_hash="h", full_albums=False)
+    assert playlists.default_mode(playlist, is_single=False, album_owned=False, all_tracks_owned=False) == "tracks"
+    assert playlists.default_mode(playlist, is_single=True, album_owned=False, all_tracks_owned=False) == "full"
+    assert playlists.default_mode(playlist, is_single=False, album_owned=False, all_tracks_owned=False, has_single=True) == "single"
+    assert playlists.default_mode(playlist, is_single=False, album_owned=False, all_tracks_owned=False, has_single=True, single_owned=True) == "skip"
 
 
 async def test_prefer_studio_toggle_rechooses(settings, mb):
@@ -434,6 +467,7 @@ async def test_a_recording_only_on_compilations_finds_the_named_studio_album(set
     r = await playlists.review(playlist.id, settings)
     group = [g for g in r.groups if g.rg_mbid == "rg-voyage"][0]
     assert group.album.artist == "Herbie Hancock" and group.album.first_release_date == "1965-05-17"
+    assert group.album.min_track_count == 5 and group.estimate_mb == 5 * 30  # fetched: the search has no track count
     assert not [g for g in r.groups if g.rg_mbid == "rg-cozy"]
     # The compilation stays available in the row's From list, and picking it by hand sticks.
     playlists.set_track_album(voyage.id, "rg-cozy")
@@ -475,3 +509,20 @@ def test_static_files_are_versioned():
     assert len(web._static_version()) == 10
     page = web.templates.get_template("base.html").render(request=None)
     assert f"/static/style.css?v={web._static_version()}" in page
+
+
+async def test_review_page_shows_the_single_mode_and_outcome_line(settings, mb, monkeypatch):
+    from picker import web
+
+    monkeypatch.setattr(web, "services", playlists.services)
+    lines = CSV.split("\n")
+    text = lines[0] + "\n" + next(line for line in lines if "Teen Spirit" in line) + "\n"
+    playlist = await resolved_playlist(settings, mb, text=text)
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    page = client.get(f"/playlists/{playlist.id}").text
+    assert "All 12 tracks" in page and 'value="single"' in page and "tracks on the playlist" not in page
+    playlists.set_options(playlist.id, full_albums=False)
+    page = client.get(f"/playlists/{playlist.id}").text
+    assert "The single <em>Smells Like Teen Spirit</em> (1991), 4 tracks" in page and "~120 MB" in page

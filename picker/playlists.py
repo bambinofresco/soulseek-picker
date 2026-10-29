@@ -31,6 +31,7 @@ from .config import Settings, get_settings
 from .db import session
 from .jobs import handler, log_event, worker
 from .models import Album, Job, Playlist, PlaylistAlbum, PlaylistTrack
+from .clients.http import ServiceError
 from .queries import _BRACKETED, normalize
 
 log = logging.getLogger(__name__)
@@ -313,8 +314,9 @@ def choose_album(options: list[AlbumOption], csv_album: str, prefer_studio: bool
 
 
 def single_for(options: list[AlbumOption], title: str) -> AlbumOption | None:
-    """The single or EP that holds the recording: one named after the track if there is one, else the earliest."""
-    singles = [o for o in options if o.kind in ("single", "ep")]
+    """The single that holds the recording (type Single; an EP counts as an album): one named
+    after the track if there is one, else the earliest."""
+    singles = [o for o in options if o.kind == "single"]
     if not singles:
         return None
     want = normalize(title or "")
@@ -369,7 +371,14 @@ async def find_named_album(track: PlaylistTrack, mb) -> AlbumOption | None:
     key, want_artist = album_key(title), normalize(artist)
     found = [o for o in (option_from_release_group(g) for g in groups if g.get("id"))
              if o.kind in ("album", "ep") and album_key(o.title) == key and (not want_artist or want_artist in normalize(o.artist))]
-    return _earliest(found)
+    option = _earliest(found)
+    if option is not None and option.track_count is None:
+        try:  # the search gives no track count; one lookup with media does (the estimate and "all N tracks" need it)
+            counts = [c for c in await mb.release_group_track_counts(option.rg_mbid) if c]
+        except ServiceError:
+            counts = []
+        option.track_count = min(counts) if counts else None
+    return option
 
 
 async def add_named_album(track: PlaylistTrack, playlist: Playlist, mb) -> None:
@@ -574,11 +583,8 @@ async def _resolve_rows(todo: list[PlaylistTrack], playlist: Playlist, playlist_
 # The review page --------------------------------------------------------------------------
 
 def effective_rg(track: PlaylistTrack, playlist: Playlist) -> str | None:
-    if track.dropped:
-        return None
-    if track.single_rg_mbid and (track.use_single is True or (track.use_single is None and not playlist.full_albums)):
-        return track.single_rg_mbid
-    return track.rg_mbid
+    """The album a row sits under: always its album; a single is a mode of that row, never a row."""
+    return None if track.dropped else track.rg_mbid
 
 
 @dataclass
@@ -588,8 +594,10 @@ class Group:
     tracks: list[PlaylistTrack]
     choice: PlaylistAlbum
     owned: owned.Owned | None = None
-    mode: str = "full"  # effective: full | tracks | tracks_plus | upgrade | skip
-    is_single: bool = False
+    mode: str = "full"  # effective: full | tracks | single | tracks_plus | upgrade | skip
+    is_single: bool = False  # the album itself is a Single
+    single: Album | None = None  # the one single holding every row of this album, offered as a mode
+    single_owned: owned.Owned | None = None
     partial_copy: bool = False  # the library holds some of this album and the playlist wants more of it
     estimate_mb: int = 0
 
@@ -615,13 +623,15 @@ class Review:
 
 
 def default_mode(playlist: Playlist, is_single: bool, album_owned: bool, all_tracks_owned: bool,
-                 partial_copy: bool = False) -> str:
+                 partial_copy: bool = False, has_single: bool = False, single_owned: bool = False) -> str:
     if partial_copy:
         return "upgrade"  # the library holds part of the album and the playlist wants more: replace it whole
     if album_owned or all_tracks_owned:
         return "skip"
-    if is_single or playlist.full_albums:
-        return "full"
+    if playlist.full_albums or is_single:
+        return "full"  # a Single in full is its own tracks anyway
+    if has_single:
+        return "skip" if single_owned else "single"  # the smallest whole release that has the song
     return "tracks"
 
 
@@ -644,34 +654,49 @@ async def review(playlist_id: int, settings: Settings | None = None) -> Review |
             grouped.setdefault(rg, []).append(track)
         if track.resolution in (None, "none", "text-weak") or not rg:
             attention.append(track)
+    single_of: dict[str, str] = {}  # album -> the one single every row of it shares
+    for rg, members in grouped.items():
+        singles = {t.single_rg_mbid for t in members}
+        if len(singles) == 1 and None not in singles:
+            single_of[rg] = singles.pop()
+    wanted_rgs = list(grouped) + [rg for rg in single_of.values() if rg not in grouped]
     with session() as s:
-        albums = {a.rg_mbid: a for a in s.exec(select(Album).where(Album.rg_mbid.in_(list(grouped))))} if grouped else {}
+        albums = {a.rg_mbid: a for a in s.exec(select(Album).where(Album.rg_mbid.in_(wanted_rgs)))} if grouped else {}
         for rg in grouped:
             if rg not in choices:
                 choice = PlaylistAlbum(playlist_id=playlist_id, rg_mbid=rg)
                 s.add(choice)
                 choices[rg] = choice
         s.commit()
-    have = await owned.owned_release_groups(list(grouped), settings) if grouped else {}
-    groups, counts, total = [], {"full": 0, "tracks": 0, "tracks_plus": 0, "upgrade": 0, "skip": 0, "owned": 0}, 0
+    have = await owned.owned_release_groups(wanted_rgs, settings) if grouped else {}
+    groups, total = [], 0
+    counts = {"full": 0, "tracks": 0, "single": 0, "tracks_plus": 0, "upgrade": 0, "skip": 0, "owned": 0}
     for rg, members in grouped.items():
         album = albums.get(rg)
-        is_single = bool(album and (album.primary_type or "").lower() in ("single", "ep"))
+        is_single = bool(album and (album.primary_type or "").lower() == "single")
         album_owned = rg in have
         all_owned = all(t.owned_path for t in members)
-        group = Group(rg_mbid=rg, album=album, tracks=members, choice=choices[rg], owned=have.get(rg), is_single=is_single)
+        single = albums.get(single_of[rg]) if rg in single_of else None
+        single_owned = have.get(single_of[rg]) if rg in single_of else None
+        group = Group(rg_mbid=rg, album=album, tracks=members, choice=choices[rg], owned=have.get(rg), is_single=is_single,
+                      single=single, single_owned=single_owned)
         held = have.get(rg)
         expected = album.min_track_count if album and album.min_track_count else None
         group.partial_copy = bool(held and not all_owned and expected and held.have is not None and held.have < expected)
-        group.mode = choices[rg].mode or default_mode(playlist, is_single, album_owned, all_owned, group.partial_copy)
+        group.mode = choices[rg].mode or default_mode(playlist, is_single, album_owned, all_owned, group.partial_copy,
+                                                      has_single=single is not None, single_owned=single_owned is not None)
+        if group.mode == "single" and single is None:
+            group.mode = "full"  # chosen before the row was matched again and lost its single
         if group.mode in ("full", "upgrade"):
             group.estimate_mb = ((album.min_track_count if album and album.min_track_count else len(members)) or 0) * TRACK_MB
         elif group.mode == "tracks":
             group.estimate_mb = group.wanted_tracks * TRACK_MB
+        elif group.mode == "single":
+            group.estimate_mb = (single.min_track_count or 2) * TRACK_MB
         elif group.mode == "tracks_plus":
             group.estimate_mb = (group.wanted_tracks + (held.have or 0 if held else 0)) * TRACK_MB
         total += group.estimate_mb
-        if album_owned or all_owned:
+        if album_owned or all_owned or (group.mode == "skip" and single_owned):
             counts["owned"] += 1
         if group.mode in counts:
             counts[group.mode] += 1
@@ -700,7 +725,7 @@ def set_options(playlist_id: int, *, full_albums: bool | None = None, prefer_stu
 
 
 def set_mode(playlist_id: int, rg_mbid: str, mode: str | None) -> None:
-    if mode not in (None, "full", "tracks", "tracks_plus", "upgrade", "skip"):
+    if mode not in (None, "full", "tracks", "single", "tracks_plus", "upgrade", "skip"):
         raise ValueError(f"unknown mode {mode!r}")
     with session() as s:
         choice = s.exec(select(PlaylistAlbum).where(PlaylistAlbum.playlist_id == playlist_id,
@@ -713,19 +738,17 @@ def set_mode(playlist_id: int, rg_mbid: str, mode: str | None) -> None:
 
 
 def set_track_album(track_id: int, rg_mbid: str) -> None:
-    """The user picked another of the row's albums (or its single)."""
+    """The user picked another of the row's albums."""
     with session() as s:
         track = s.get(PlaylistTrack, track_id)
-        if rg_mbid == track.single_rg_mbid:
-            track.use_single = True
-        else:
-            options = {o["rg_mbid"]: AlbumOption(**o) for o in track.options or []}
-            if rg_mbid in options:
-                ensure_album_row(options[rg_mbid])
-            track.rg_mbid = rg_mbid
-            track.use_single = False
-            if track.resolution in (None, "none", "text-weak"):
-                track.resolution = "manual"
+        options = {o["rg_mbid"]: AlbumOption(**o) for o in track.options or []}
+        if rg_mbid in options:
+            ensure_album_row(options[rg_mbid])
+        track.rg_mbid = rg_mbid
+        if track.single_rg_mbid == rg_mbid:
+            track.single_rg_mbid = None  # the single is the album now; no Single mode on top of it
+        if track.resolution in (None, "none", "text-weak"):
+            track.resolution = "manual"
         s.add(track)
         s.commit()
 

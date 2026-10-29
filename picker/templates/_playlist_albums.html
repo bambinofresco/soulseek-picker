@@ -24,19 +24,26 @@
       <span class="album-head">
         <span class="album-name">{% if a %}<a href="/album/{{ g.rg_mbid }}">{{ a.artist }} — {{ a.title }}</a>{% if a.first_release_date %} <span class="muted">({{ a.first_release_date[:4] }}{% if a.primary_type and a.primary_type != "Album" %}, {{ a.primary_type }}{% endif %})</span>{% endif %}{% else %}<a href="/album/{{ g.rg_mbid }}" class="mono">{{ g.rg_mbid[:8] }}</a>{% endif %}</span>
         <span class="album-facts muted small">
-          {{ g.tracks|length }} of {{ a.min_track_count if a and a.min_track_count else "?" }} tracks on the playlist{% if g.owned_tracks %}, {{ g.owned_tracks }} owned{% endif %}
-          {% if g.owned %} · <span class="badge ok" title="{{ g.owned.path or '' }}">owned{% if g.owned.have and g.owned.want %} {{ g.owned.have }}/{{ g.owned.want }}{% endif %}</span>{% endif %}
+          {% set n = a.min_track_count if a and a.min_track_count else none %}
+          {% if g.mode == "full" %}All {{ n if n else "?" }} tracks
+          {% elif g.mode == "tracks" %}{{ g.wanted_tracks }} track{{ "s" if g.wanted_tracks != 1 }} only
+          {% elif g.mode == "single" %}The single <em>{{ g.single.title }}</em>{% if g.single.first_release_date %} ({{ g.single.first_release_date[:4] }}){% endif %}, {{ g.single.min_track_count if g.single.min_track_count else "?" }} tracks
+          {% elif g.mode == "upgrade" %}All {{ n if n else "?" }} tracks, replacing your copy
+          {% elif g.mode == "tracks_plus" %}These {{ g.wanted_tracks }} + the {{ g.owned.have }} you have, replacing your copy
+          {% else %}Nothing{% endif %}
           {% if g.estimate_mb %} · ~{{ g.estimate_mb }} MB{% endif %}
+          {% if g.owned_tracks %} · {{ g.owned_tracks }} already in the library{% endif %}
+          {% if g.owned %} · <span class="badge ok" title="{{ g.owned.path or '' }}">owned{% if g.owned.have and g.owned.want %} {{ g.owned.have }}/{{ g.owned.want }}{% endif %}</span>{% endif %}
         </span>
       </span>
       <span class="album-mode{% if g.partial_copy %} wide{% endif %}" onclick="if (event.target === this) event.preventDefault()">
         {% if g.partial_copy %}{% set choices = [("upgrade", "Full album (replaces your " ~ g.owned.have ~ " tracks)"), ("tracks_plus", "These " ~ g.wanted_tracks ~ " + the " ~ g.owned.have ~ " you have"), ("skip", "Skip")] %}
-        {% else %}{% set choices = [("full", "Full album"), ("tracks", "Only these " ~ g.tracks|length), ("upgrade", "Upgrade"), ("skip", "Skip")] %}{% endif %}
+        {% else %}{% set choices = [("full", "Full album"), ("tracks", "Only these " ~ g.tracks|length), ("single", "Single"), ("upgrade", "Upgrade"), ("skip", "Skip")] %}{% endif %}
         {% for m, label in choices %}
-        {% if m != "upgrade" or g.owned %}
+        {% if (m == "upgrade" and not g.owned) or (m == "single" and not g.single) %}<span class="slot"></span>
+        {% else %}
         <label class="small"><input type="radio" name="mode-{{ g.rg_mbid }}" value="{{ m }}" {% if g.mode == m %}checked{% endif %}
           hx-post="/playlists/{{ p.id }}/albums/{{ g.rg_mbid }}/mode" hx-vals='{"mode": "{{ m }}"}' hx-target="#albums" hx-swap="outerHTML"> {{ label }}{% if m == "skip" and g.owned %} (owned){% endif %}</label>
-        {% else %}<span class="slot"></span>
         {% endif %}
         {% endfor %}
         {% if g.choice.mode %}<a class="small muted" href="#" hx-post="/playlists/{{ p.id }}/albums/{{ g.rg_mbid }}/mode" hx-vals='{"mode": "auto"}' hx-target="#albums" hx-swap="outerHTML" title="Follow the top toggle again">auto</a>{% endif %}
@@ -55,9 +62,10 @@
             {% if t.owned_how == "name" %}<a class="small muted" href="#" hx-post="/playlists/{{ p.id }}/tracks/{{ t.id }}/owned" hx-target="#albums" hx-swap="outerHTML" title="This file is not the track I mean">wrong?</a>{% endif %}
           {% elif t.owned_unticked %}<a class="small muted" href="#" hx-post="/playlists/{{ p.id }}/tracks/{{ t.id }}/owned" hx-target="#albums" hx-swap="outerHTML">check by name again</a>{% endif %}</td>
         <td data-label="From">
-          {% if t.options|length > 1 or t.single_rg_mbid %}
+          {% set alts = t.options|rejectattr("kind", "equalto", "single")|list %}
+          {% if alts|length > 1 %}
           <select class="small" hx-post="/playlists/{{ p.id }}/tracks/{{ t.id }}/album" hx-target="#albums" hx-swap="outerHTML" name="rg_mbid">
-            {% for o in t.options %}{% if o.kind != "single" or o.rg_mbid == t.single_rg_mbid or o.rg_mbid == t.rg_mbid %}
+            {% for o in t.options %}{% if o.kind != "single" or o.rg_mbid == t.rg_mbid %}
             <option value="{{ o.rg_mbid }}" {% if o.rg_mbid == g.rg_mbid %}selected{% endif %}>{{ o.title }}{% if o.date %} ({{ o.date[:4] }}{% else %} ({% endif %}, {{ o.kind }})</option>
             {% endif %}{% endfor %}
           </select>

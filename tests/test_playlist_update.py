@@ -30,7 +30,7 @@ async def test_update_keeps_matches_and_choices(settings, mb):
     assert [t.title for t in after] == ["Get Lucky", "Smells Like Teen Spirit", "Textual", "Brand New Song"]
     assert [t.position for t in after] == [1, 2, 3, 4]
     slts = after[1]
-    assert slts.id == before["Smells Like Teen Spirit"].id and slts.use_single is False and slts.resolution == "isrc"
+    assert slts.id == before["Smells Like Teen Spirit"].id and slts.resolution == "isrc"
     assert after[2].id == before["Textual"].id and after[2].dropped  # matched by name (no URI, no ISRC) and still dropped
     assert after[3].resolution is None  # new: to be resolved
     with session() as s:

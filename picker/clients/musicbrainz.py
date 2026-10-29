@@ -88,6 +88,11 @@ class MusicBrainzClient:
         data = await self._get("/release-group/", {"query": " AND ".join(parts), "limit": limit})
         return data.get("release-groups", [])
 
+    async def release_group_track_counts(self, rg_mbid: str) -> list[int]:
+        """Track totals of the group's releases, from one lookup with media (no recordings)."""
+        data = await self._get(f"/release-group/{rg_mbid}", {"inc": "releases media"})
+        return [sum(m.get("track-count") or 0 for m in r.get("media") or []) for r in data.get("releases") or []]
+
     async def recordings_by_isrcs(self, isrcs: list[str]) -> list[dict]:
         """Recordings carrying any of these ISRCs (at most 25 per call), each with its `isrcs`
         and every release it is on, including the release group's type and the release's date,

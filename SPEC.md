@@ -334,13 +334,17 @@ sit only on compilations: when the CSV names an album that none of the recording
 groups is, and none is a studio album or EP by the track's artist, a release-group search by
 artist and album name (edition suffixes such as "- Remastered 1999" stripped) adds the named
 studio album or EP as an option, which the rule above then picks. Release groups
-MusicBrainz splits are not merged (the review page shows both). A single or
-EP holding the recording is kept aside so the row can switch between it and the album; with
-the **Full albums** toggle off a row defaults to its single, in full.
+MusicBrainz splits are not merged (the review page shows both). A single (type Single; an
+EP counts as an album) holding the recording is kept aside: when every row of an album shares
+one single, the album's row offers **Single** as a mode, and with the **Full albums** toggle
+off such a row defaults to it, in full. Rows are never regrouped under the single.
 
 The review page groups rows by album in order of first appearance. Each album has a mode:
-**Full album**, **Only these N**, **Upgrade** (when a copy is owned), **Skip**; unset follows
-the top toggle, and an owned album defaults to Skip. An album the library holds in part while
+**Full album**, **Only these N**, **Single** (when one single holds every row), **Upgrade**
+(when a copy is owned), **Skip**; unset follows the top toggle, and an owned album defaults to
+Skip. The line under the album states what the mode fetches (all N tracks; N tracks only; the
+single, its year and track count; replacing your copy) and the size estimate. An album found
+by the release-group search gets its track count from one more lookup. An album the library holds in part while
 the playlist wants more of it offers **Full album** (an upgrade replacing it) or **These N +
 the M you have** (one uploader's folder with the union, also replacing it), never adding files
 to the existing folder. Each row shows how it was resolved, whether the library already has

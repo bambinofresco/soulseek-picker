@@ -92,11 +92,13 @@ A `resolve` job runs after upload, with progress on the review page (rows done /
    The CSV's **Album Artist** drives the album and the Soulseek search; the track's artist list
    (Exportify's comma-separated "Artist Name(s)") is used only to resolve the recording, since
    searching Soulseek for "Artist A, Artist B" finds nothing.
-4. **Singles.** When a recording was also released as a single (a Single or EP release group
-   holds it), the row offers **Get: ○ the single (1977, 3 tracks) ● the album**. The default
-   follows the page's top toggle: with **Full albums** on, the album, with the row's box ticked
-   as usual; with it off, the single, in full (A-side and B-sides), since "the single" is the
-   smallest whole release that has the song.
+4. **Singles.** When a recording was also released as a single (a Single release group holds
+   it; an EP counts as an album), the album's row offers **Single** as its own mode next to
+   Full album, Only these and Skip, offered when every row of the album shares one single. The
+   default follows the page's top toggle: with **Full albums** on, the album; with it off, the
+   single, in full (A-side and B-sides), since "the single" is the smallest whole release that
+   has the song. The row stays the album's row whichever mode it is in (built this way after
+   the first version swapped the row for the single's, which read as rows jumping around).
 5. **Already owned.** Section 4 decides, per album and per track.
 
 Every lookup is cached in `cacheentry` like the rest of MusicBrainz.
@@ -363,7 +365,8 @@ whatever added it, not only playlists.
 - The owner does not use Lidarr's Spotify import list; no racing to guard against.
 - An owned album shows as owned with its preference score; **Upgrade** is offered beside it and
   built in this round, replacing the whole album.
-- Singles: the single when the top toggle is off, the album when it is on, switchable per row.
+- Singles: the single when the top toggle is off, the album when it is on, switchable per row
+  (a **Single** radio on the album's row; EPs are albums).
 - Live and edited versions: the recording the playlist names, wherever it lives.
 - No setting to let Lidarr complete partial albums; partial albums stay unmonitored.
 - Albums Lidarr's metadata profile won't list bypass Lidarr and live in beets and Plex.

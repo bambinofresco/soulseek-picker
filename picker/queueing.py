@@ -130,15 +130,19 @@ async def start_run(playlist_id: int, settings: Settings | None = None) -> int:
         if group.mode == "skip" or group.choice.queue_item_id:
             continue  # skipped, or already part of this run (an Update added new albums; the old ones keep their items)
         wanted = [t.recording_mbid for t in group.tracks if not t.owned_path and t.recording_mbid]
-        mode, owned = group.mode, group.owned.to_dict() if group.owned else None
-        if mode == "tracks_plus":
+        mode, owned, rg = group.mode, group.owned.to_dict() if group.owned else None, group.rg_mbid
+        if mode == "single":
+            # The one single holding every row of this album, in full: the smallest whole release that has the song.
+            rg, mode = group.single.rg_mbid, "full"
+            owned = group.single_owned.to_dict() if group.single_owned else None
+        elif mode == "tracks_plus":
             # These tracks plus the ones already held, from one uploader's folder, replacing the partial copy.
             mode = "tracks"
             held = [f.recording_mbid for f in library.folder_files(group.owned.path)] if group.owned and group.owned.path else []
             wanted = list(dict.fromkeys(wanted + [r for r in held if r]))
         elif mode == "tracks":
             owned = None  # a plain tracks-only download adds nothing to an existing folder
-        item = add(group.rg_mbid, mode, source="playlist", playlist_id=playlist_id, wanted=wanted, owned=owned)
+        item = add(rg, mode, source="playlist", playlist_id=playlist_id, wanted=wanted, owned=owned)
         created += 1
         with session() as s:
             choice = s.get(PlaylistAlbum, group.choice.id)
